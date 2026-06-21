@@ -1,0 +1,15 @@
+[Unit]
+Description=Phone Remote Input FastAPI service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/remote-input
+EnvironmentFile=/opt/remote-input/.env
+ExecStart=/opt/remote-input/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8790 --proxy-headers --forwarded-allow-ips='*'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

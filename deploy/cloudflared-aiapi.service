@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudflare Tunnel aiapi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/aiapi.yml run aiapi
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+tunnel: aiapi
+credentials-file: C:\\Users\\SsuJo_\\.cloudflared\\aiapi.json
+
+originRequest:
+  connectTimeout: 10s
+  keepAliveConnections: 100
+  keepAliveTimeout: 90s
+  noTLSVerify: false
+
+ingress:
+  - hostname: your-domain.example.com
+    service: http://127.0.0.1:8790
+  - service: http_status:404

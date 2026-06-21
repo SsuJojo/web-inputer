@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+logs/
+*.log
+.DS_Store
+.worktrees/
+build/
+dist/
+memory/
+*.spec.bak
+.git_old/

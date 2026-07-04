@@ -79,6 +79,9 @@ class InputEvent:
     delta: int | None = None
     dx: int | None = None
     dy: int | None = None
+    source: str | None = None
+    seq: int | None = None
+    client_ts: int | None = None
 
 
 def normalize_key(key: str) -> str:

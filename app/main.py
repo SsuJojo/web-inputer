@@ -365,9 +365,18 @@ async def handle_message(websocket: WebSocket, send_lock: asyncio.Lock, client_i
         delta=message.get("delta"),
         dx=message.get("dx"),
         dy=message.get("dy"),
+        source=message.get("source"),
+        seq=message.get("seq") if isinstance(message.get("seq"), int) else None,
+        client_ts=message.get("clientTs") if isinstance(message.get("clientTs"), int) else None,
     )
     await input_controller.submit(event)
-    await send_json(websocket, send_lock, {"type": "ack", "id": message.get("id")})
+    await send_json(websocket, send_lock, {
+        "type": "ack",
+        "id": message.get("id"),
+        "seq": message.get("seq"),
+        "source": message.get("source"),
+        "serverTs": int(time.time() * 1000),
+    })
 
 
 @app.websocket("/ws")

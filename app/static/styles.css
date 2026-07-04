@@ -87,10 +87,16 @@ button.toggle.active { background: linear-gradient(135deg, #f97316, #ef4444); }
 .screen-preview.on #screenPlaceholder { display: none; }
 .screen-preview.off { max-height: 0; opacity: 0; transform: translateY(-6px); border-width: 0; pointer-events: none; }
 #screenFrameModal .screen-frame-card { width: 100vw; height: 100dvh; max-height: none; overflow: hidden; display: grid; padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); border-radius: 0; }
-.screen-frame-close { position: absolute; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); z-index: 40; display: grid; place-items: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 999px; font-size: 22px; line-height: 1; background: rgba(15, 23, 42, 0.72); }
-.screen-frame-viewport { min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: #020617; touch-action: pan-x pan-y; }
-.screen-frame-stage { position: relative; width: 100%; margin: 0 auto; }
-.screen-frame-viewport img { width: 100%; max-width: none; height: auto; display: block; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.screen-frame-close { position: absolute; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); z-index: 40; display: flex; align-items: center; justify-content: center; width: 36px; min-width: 36px; height: 36px; min-height: 36px; padding: 0; border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 999px; font-size: 0; color: #e2e8f0; background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); transition: left 280ms cubic-bezier(0.22, 0.61, 0.36, 1), background 160ms ease, transform 160ms ease; }
+.screen-frame-close::before, .screen-frame-close::after { content: ""; position: absolute; top: 50%; left: 50%; width: 14px; height: 1.8px; border-radius: 2px; background: currentColor; }
+.screen-frame-close::before { transform: translate(-50%, -50%) rotate(45deg); }
+.screen-frame-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
+.screen-frame-close.align-right { left: calc(100% - 36px - max(8px, env(safe-area-inset-right))); }
+.screen-frame-close:active { transform: scale(0.92); background: rgba(15, 23, 42, 0.92); }
+.screen-frame-viewport { min-height: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: #020617; touch-action: none; overscroll-behavior: contain; }
+.screen-frame-stage { position: relative; width: 100%; height: 100%; margin: 0 auto; display: flex; align-items: center; justify-content: center; transform-origin: 0 0; cursor: grab; }
+.screen-frame-stage:active { cursor: grabbing; }
+.screen-frame-stage img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; pointer-events: none; }
 
 .section-toggle { width: 100%; background: #334155; font-size: 13px; font-weight: 800; line-height: 1.12; white-space: pre-line; }
 .wheel-surface { touch-action: none; }

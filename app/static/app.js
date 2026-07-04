@@ -58,7 +58,10 @@ let wheelPointer = null;
 let wheelInertiaTimer = 0;
 let buttonDrag = null;
 let screenPreviewEnabled = false;
-let screenFrameZoom = 1;
+let screenFramePanzoom = null;
+let screenFrameWheelHandler = null;
+let screenFrameZoomed = false;
+let screenFrameLastTapAt = 0;
 let screenFrameOrientationActive = false;
 let screenFrameLastTiltScrollAt = 0;
 let windowStateTimer = 0;
@@ -78,6 +81,28 @@ let cursorPredictLogAt = 0;
 let clientLogQueue = [];
 let clientLogTimer = 0;
 const heldKeys = new Set();
+
+const CursorAuthority = {
+  WEB_REMOTE: 'web-remote-control',
+  PHYSICAL: 'physical-mouse-active',
+};
+
+const REMOTE_LOCK_MS = 350;
+const REMOTE_SUPPRESS_SYNC_MS = 180;
+const PHYSICAL_DETECT_PX = 10;
+const REMOTE_EXPECT_WINDOW_MS = 500;
+const MAX_REMOTE_LEDGER = 40;
+const CURSOR_POLL_WEB_MS = 200;
+const CURSOR_POLL_PHYSICAL_MS = 80;
+
+let cursorAuthority = CursorAuthority.PHYSICAL;
+let lastRemoteInputAt = 0;
+let remoteControlUntil = 0;
+let suppressServerSyncUntil = 0;
+let remoteMoveSeq = 0;
+let lastAckedRemoteMoveSeq = 0;
+let remoteMoveLedger = [];
+let lastServerCursorPayload = null;
 
 const PUBLIC_ORIGIN = String(window.PUBLIC_ORIGIN || '').replace(/\/+$/, '');
 const PUBLIC_ORIGIN_CONFIGURED = /^https?:\/\//i.test(PUBLIC_ORIGIN);
@@ -353,6 +378,9 @@ function connect() {
   });
   ws.addEventListener('message', (event) => {
     const message = JSON.parse(event.data);
+    if (message.type === 'ack' && Number.isFinite(Number(message.seq))) {
+      markRemoteMoveAcked(Number(message.seq));
+    }
     if (message.type === 'pong' && message.ts) {
       lastPongAt = Date.now();
       markDirectConfirmed();
@@ -423,7 +451,16 @@ function send(payload) {
 }
 
 function sendInput(payload) {
-  return send({ type: 'input', id: ++eventId, ...payload });
+  const enriched = {
+    type: 'input',
+    id: ++eventId,
+    clientTs: Date.now(),
+    ...payload,
+  };
+  if (payload.action?.startsWith('mouse_') && !enriched.source) {
+    enriched.source = cursorAuthority;
+  }
+  return send(enriched);
 }
 
 function sendWindowControl(action, payload = {}) {
@@ -498,6 +535,76 @@ function queueClientLog(kind, data) {
   clientLogTimer = window.setTimeout(flushClientLogs, 500);
 }
 
+function markRemoteMoveAcked(seq) {
+  lastAckedRemoteMoveSeq = Math.max(lastAckedRemoteMoveSeq, seq);
+  for (const item of remoteMoveLedger) {
+    if (item.seq === seq) item.acked = true;
+  }
+}
+
+function enterWebRemoteControl(reason) {
+  const now = Date.now();
+  if (cursorAuthority !== CursorAuthority.WEB_REMOTE) {
+    queueClientLog('cursor-authority', { state: CursorAuthority.WEB_REMOTE, reason });
+  }
+  cursorAuthority = CursorAuthority.WEB_REMOTE;
+  lastRemoteInputAt = now;
+  remoteControlUntil = now + REMOTE_LOCK_MS;
+  suppressServerSyncUntil = now + REMOTE_SUPPRESS_SYNC_MS;
+}
+
+function rememberRemoteMove(dx, dy) {
+  const move = {
+    seq: ++remoteMoveSeq,
+    dx,
+    dy,
+    sentAt: Date.now(),
+    acked: false,
+  };
+  remoteMoveLedger.push(move);
+  if (remoteMoveLedger.length > MAX_REMOTE_LEDGER) remoteMoveLedger = remoteMoveLedger.slice(-MAX_REMOTE_LEDGER);
+  return move.seq;
+}
+
+function pruneRemoteMoveLedger(now) {
+  remoteMoveLedger = remoteMoveLedger.filter((item) => now - item.sentAt < REMOTE_EXPECT_WINDOW_MS);
+}
+
+function recentRemoteMagnitude(now) {
+  pruneRemoteMoveLedger(now);
+  let dx = 0;
+  let dy = 0;
+  for (const item of remoteMoveLedger) {
+    dx += item.dx;
+    dy += item.dy;
+  }
+  return Math.hypot(dx, dy);
+}
+
+function serverCursorDistance(a, b) {
+  if (!a || !b) return 0;
+  return Math.hypot((a.x || 0) - (b.x || 0), (a.y || 0) - (b.y || 0));
+}
+
+function serverMoveMatchesRemote(serverDelta, now) {
+  if (now - lastRemoteInputAt > REMOTE_EXPECT_WINDOW_MS) return false;
+  const expected = recentRemoteMagnitude(now);
+  if (expected < 1) return false;
+  const ratio = serverDelta / expected;
+  return ratio >= 0.15 && ratio <= 6;
+}
+
+function sendRemoteMouseMove(dx, dy) {
+  const seq = rememberRemoteMove(dx, dy);
+  return sendInput({
+    action: 'mouse_move',
+    x: dx,
+    y: dy,
+    source: CursorAuthority.WEB_REMOTE,
+    seq,
+  });
+}
+
 function cursorFromServer(serverCursor) {
   return {
     ...serverCursor,
@@ -529,9 +636,28 @@ function predictCursorMove(dx, dy) {
 }
 
 function moveMouse(dx, dy) {
+  enterWebRemoteControl('mouse-move');
   if (cursorState && !cursorSyncAnchor) cursorSyncAnchor = { rx: cursorState.rx, ry: cursorState.ry };
   predictCursorMove(dx, dy);
-  sendInput({ action: 'mouse_move', x: dx, y: dy });
+  sendRemoteMouseMove(dx, dy);
+}
+
+let queuedMouseDx = 0;
+let queuedMouseDy = 0;
+let mouseMoveFlushFrame = 0;
+
+function queueMouseMove(dx, dy) {
+  queuedMouseDx += dx;
+  queuedMouseDy += dy;
+  if (mouseMoveFlushFrame) return;
+  mouseMoveFlushFrame = window.requestAnimationFrame(() => {
+    mouseMoveFlushFrame = 0;
+    const flushDx = queuedMouseDx;
+    const flushDy = queuedMouseDy;
+    queuedMouseDx = 0;
+    queuedMouseDy = 0;
+    if (flushDx || flushDy) moveMouse(flushDx, flushDy);
+  });
 }
 
 function positionCursor(cursor, target, image) {
@@ -614,6 +740,57 @@ function updateCursorGain(serverCursor) {
   return result;
 }
 
+function applyServerCursorWithAuthority(serverCursor) {
+  const now = Date.now();
+  const serverState = cursorFromServer(serverCursor);
+  const serverDelta = serverCursorDistance(serverCursor, lastServerCursorPayload);
+  const inRemoteProtection = now < remoteControlUntil || now < suppressServerSyncUntil;
+  const explainedByRemote = serverMoveMatchesRemote(serverDelta, now);
+
+  if (serverDelta > PHYSICAL_DETECT_PX && !inRemoteProtection && !explainedByRemote) {
+    if (cursorAuthority !== CursorAuthority.PHYSICAL) {
+      queueClientLog('cursor-authority', {
+        state: CursorAuthority.PHYSICAL,
+        reason: 'server-cursor-unexplained',
+        serverDelta: Math.round(serverDelta),
+      });
+    }
+    cursorAuthority = CursorAuthority.PHYSICAL;
+  }
+
+  if (cursorAuthority === CursorAuthority.PHYSICAL || !cursorState) {
+    cursorState = serverState;
+    lastServerCursorPayload = serverCursor;
+    return { serverState, errorX: 0, errorY: 0, hard: true };
+  }
+
+  const errorX = (serverState.rx - cursorState.rx) * serverCursor.width;
+  const errorY = (serverState.ry - cursorState.ry) * serverCursor.height;
+  const errorPx = Math.hypot(errorX, errorY);
+
+  if (now < suppressServerSyncUntil) {
+    cursorState = { ...serverState, rx: cursorState.rx, ry: cursorState.ry };
+    lastServerCursorPayload = serverCursor;
+    return { serverState, errorX, errorY, hard: false };
+  }
+
+  const remoteActive = now - lastRemoteInputAt < REMOTE_LOCK_MS;
+  if (remoteActive) {
+    const alpha = errorPx < 20 ? 0.12 : 0.03;
+    cursorState = {
+      ...serverState,
+      rx: cursorState.rx + (serverState.rx - cursorState.rx) * alpha,
+      ry: cursorState.ry + (serverState.ry - cursorState.ry) * alpha,
+    };
+    lastServerCursorPayload = serverCursor;
+    return { serverState, errorX, errorY, hard: false };
+  }
+
+  cursorState = serverState;
+  lastServerCursorPayload = serverCursor;
+  return { serverState, errorX, errorY, hard: true };
+}
+
 async function updateCursor() {
   if (!screenPreviewEnabled) return;
   if (cursorRequestInFlight) return;
@@ -626,19 +803,14 @@ async function updateCursor() {
       const serverCursor = await res.json();
       const before = cursorState ? { rx: cursorState.rx, ry: cursorState.ry } : null;
       const gainInfo = updateCursorGain(serverCursor);
-      const serverState = cursorFromServer(serverCursor);
-      const errorX = before ? (serverState.rx - before.rx) * serverCursor.width : 0;
-      const errorY = before ? (serverState.ry - before.ry) * serverCursor.height : 0;
-      const movingNow = Date.now() - lastCursorMoveAt < 260;
-      const shouldHardSync = !movingNow || !cursorState || Math.abs(errorX) > 8 || Math.abs(errorY) > 8;
-      if (shouldHardSync || !serverState.icon) {
-        cursorState = serverState;
-      } else {
-        cursorState = { ...serverState, rx: cursorState.rx, ry: cursorState.ry };
-      }
+      const authorityResult = applyServerCursorWithAuthority(serverCursor);
+      const serverState = authorityResult.serverState;
+      const errorX = authorityResult.errorX;
+      const errorY = authorityResult.errorY;
+      const movingNow = cursorAuthority === CursorAuthority.WEB_REMOTE;
       const logEntry = {
         seq: ++cursorLogSeq,
-        hard: !movingNow,
+        hard: authorityResult.hard,
         movingNow,
         requestedAge: Date.now() - requestedAt,
         predicted: before,
@@ -648,6 +820,8 @@ async function updateCursor() {
         actual: { x: gainInfo.actualDx, y: gainInfo.actualDy },
         measured: { x: gainInfo.measuredX, y: gainInfo.measuredY },
         gain: { x: Number(cursorGainX.toFixed(3)), y: Number(cursorGainY.toFixed(3)) },
+        authority: cursorAuthority,
+        lastAckedRemoteMoveSeq,
       };
       console.debug('[cursor-sync]', logEntry);
       queueClientLog('cursor-sync', {
@@ -668,15 +842,25 @@ async function updateCursor() {
   }
 }
 
+function scheduleNextCursorPoll() {
+  clearTimeout(cursorTimer);
+  if (!screenPreviewEnabled) return;
+  const delay = cursorAuthority === CursorAuthority.PHYSICAL ? CURSOR_POLL_PHYSICAL_MS : CURSOR_POLL_WEB_MS;
+  cursorTimer = window.setTimeout(async () => {
+    await updateCursor();
+    scheduleNextCursorPoll();
+  }, delay);
+}
+
 function startCursorPolling() {
-  clearInterval(cursorTimer);
+  clearTimeout(cursorTimer);
   primeCursorDraws();
-  cursorTimer = window.setInterval(updateCursor, 120);
+  scheduleNextCursorPoll();
 }
 
 function stopCursorPollingIfIdle() {
   if (screenPreviewEnabled) return;
-  clearInterval(cursorTimer);
+  clearTimeout(cursorTimer);
   cursorTimer = 0;
   cursorRequestId += 1;
   cursorRequestInFlight = false;
@@ -705,29 +889,53 @@ function toggleScreenPreview() {
   setScreenPreview(!screenPreviewEnabled);
 }
 
-function saveScreenFrameState() {
-  settings.screenFrameZoom = screenFrameZoom;
-  settings.screenFrameScrollLeft = screenFrameViewport.scrollLeft;
-  settings.screenFrameScrollTop = screenFrameViewport.scrollTop;
-  saveSettings();
+function getPanzoomFactory() {
+  return typeof window.Panzoom === 'function' ? window.Panzoom : null;
 }
 
-function defaultScreenFrameZoom() {
-  const naturalWidth = screenFrameImage.naturalWidth || 1;
-  const naturalHeight = screenFrameImage.naturalHeight || 1;
-  const availableWidth = Math.max(1, screenFrameViewport.clientWidth - 20);
-  const availableHeight = Math.max(1, screenFrameViewport.clientHeight - 20);
-  return Math.min(4, Math.max(0.5, (availableHeight * naturalWidth) / (availableWidth * naturalHeight)));
+function initScreenFramePanzoom() {
+  destroyScreenFramePanzoom();
+  const Panzoom = getPanzoomFactory();
+  if (!Panzoom) {
+    console.warn('[screen-frame] Panzoom is unavailable');
+    return;
+  }
+  screenFramePanzoom = Panzoom(screenFrameStage, {
+    maxScale: 4,
+    minScale: 1,
+    contain: 'outside',
+    canvas: true,
+  });
+  screenFrameZoomed = false;
+  screenFrameWheelHandler = (event) => screenFramePanzoom?.zoomWithWheel(event);
+  screenFrameViewport.addEventListener('wheel', screenFrameWheelHandler, { passive: false });
 }
 
-function restoreScreenFrameScroll() {
-  screenFrameViewport.scrollLeft = settings.screenFrameScrollLeft;
-  screenFrameViewport.scrollTop = settings.screenFrameScrollTop;
+function destroyScreenFramePanzoom() {
+  if (screenFrameWheelHandler) {
+    screenFrameViewport.removeEventListener('wheel', screenFrameWheelHandler);
+    screenFrameWheelHandler = null;
+  }
+  if (screenFramePanzoom?.destroy) screenFramePanzoom.destroy();
+  else if (screenFramePanzoom?.dispose) screenFramePanzoom.dispose();
+  screenFramePanzoom = null;
+  screenFrameZoomed = false;
+  screenFrameStage.style.transform = '';
 }
 
-function applyScreenFrameZoom() {
-  screenFrameStage.style.width = `${screenFrameZoom * 100}%`;
-  drawCursors();
+function zoomScreenFrameToPoint(event, nextScale) {
+  if (screenFramePanzoom?.zoomToPoint) {
+    screenFramePanzoom.zoomToPoint(nextScale, event, { animate: true });
+  } else {
+    screenFramePanzoom?.zoom(nextScale, { animate: true });
+  }
+}
+
+function toggleScreenFrameZoom(event) {
+  if (!screenFramePanzoom) return;
+  const nextScale = screenFrameZoomed ? 1 : 2;
+  zoomScreenFrameToPoint(event, nextScale);
+  screenFrameZoomed = nextScale > 1;
 }
 
 function refreshScreenFrame() {
@@ -753,9 +961,8 @@ async function exitScreenFrameFullscreen() {
   }
 }
 
-function scrollScreenFrameToCorner(side) {
-  const left = side === 'right' ? screenFrameViewport.scrollWidth : 0;
-  screenFrameViewport.scrollTo({ left, top: 0, behavior: 'smooth' });
+function moveScreenFrameCloseTo(side) {
+  screenFrameClose.classList.toggle('align-right', side === 'right');
 }
 
 function handleScreenFrameOrientation(event) {
@@ -765,7 +972,7 @@ function handleScreenFrameOrientation(event) {
   const now = Date.now();
   if (now - screenFrameLastTiltScrollAt < 900) return;
   screenFrameLastTiltScrollAt = now;
-  scrollScreenFrameToCorner(gamma < 0 ? 'left' : 'right');
+  moveScreenFrameCloseTo(gamma < 0 ? 'left' : 'right');
 }
 
 function startScreenFrameOrientation() {
@@ -795,42 +1002,22 @@ function stopScreenFrameOrientation() {
 }
 
 function openScreenFrame() {
-  screenFrameZoom = Number(settings.screenFrameZoom) || 1;
-  applyScreenFrameZoom();
+  moveScreenFrameCloseTo('left');
   screenFrameModal.classList.remove('hidden');
-  restoreScreenFrameScroll();
   requestScreenFrameFullscreen();
   requestScreenFrameOrientation();
   window.requestAnimationFrame(() => {
-    restoreScreenFrameScroll();
     refreshScreenFrame();
+    initScreenFramePanzoom();
   });
 }
 
 function closeScreenFrame() {
-  saveScreenFrameState();
+  destroyScreenFramePanzoom();
   screenFrameModal.classList.add('hidden');
   stopScreenFrameOrientation();
   exitScreenFrameFullscreen();
   stopCursorPollingIfIdle();
-}
-
-function zoomScreenFrame(delta, clientX, clientY) {
-  const nextZoom = Math.min(4, Math.max(0.5, screenFrameZoom + delta));
-  if (nextZoom === screenFrameZoom) return;
-
-  const viewportRect = screenFrameViewport.getBoundingClientRect();
-  const anchorX = clientX - viewportRect.left;
-  const anchorY = clientY - viewportRect.top;
-  const contentX = screenFrameViewport.scrollLeft + anchorX;
-  const contentY = screenFrameViewport.scrollTop + anchorY;
-  const scale = nextZoom / screenFrameZoom;
-
-  screenFrameZoom = nextZoom;
-  applyScreenFrameZoom();
-  screenFrameViewport.scrollLeft = (contentX * scale) - anchorX;
-  screenFrameViewport.scrollTop = (contentY * scale) - anchorY;
-  saveScreenFrameState();
 }
 
 function switchDesktop(direction) {
@@ -846,20 +1033,6 @@ function switchWindow(direction) {
   sendWindowControl('switch', { direction });
 }
 
-let framePinchDistance = 0;
-function frameTouchDistance(event) {
-  const [a, b] = event.touches;
-  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-}
-
-function frameTouchCenter(event) {
-  const [a, b] = event.touches;
-  return {
-    x: (a.clientX + b.clientX) / 2,
-    y: (a.clientY + b.clientY) / 2,
-  };
-}
-
 screenToggle.addEventListener('click', toggleScreenPreview);
 desktopLeftBtn.addEventListener('click', () => switchDesktop('left'));
 desktopRightBtn.addEventListener('click', () => switchDesktop('right'));
@@ -870,13 +1043,9 @@ screenFrameClose.addEventListener('click', closeScreenFrame);
 screenFrameBackdrop.addEventListener('click', closeScreenFrame);
 screenImage.addEventListener('load', scheduleCursorDraws);
 screenFrameImage.addEventListener('load', () => {
-  if (!Number(settings.screenFrameZoom)) {
-    screenFrameZoom = defaultScreenFrameZoom();
-    applyScreenFrameZoom();
-    restoreScreenFrameScroll();
-  }
+  if (screenFramePanzoom?.reset) screenFramePanzoom.reset();
+  screenFrameZoomed = false;
 });
-screenFrameViewport.addEventListener('scroll', saveScreenFrameState);
 screenPreview.addEventListener('transitionend', scheduleCursorDraws);
 window.addEventListener('resize', scheduleCursorDraws);
 window.addEventListener('orientationchange', scheduleCursorDraws);
@@ -888,25 +1057,21 @@ if ('ResizeObserver' in window) {
   cursorResizeObserver.observe(screenFrameImage);
 }
 
-screenFrameViewport.addEventListener('wheel', (event) => {
+screenFrameViewport.addEventListener('dblclick', (event) => {
   event.preventDefault();
-  zoomScreenFrame(event.deltaY < 0 ? 0.15 : -0.15, event.clientX, event.clientY);
-}, { passive: false });
-screenFrameViewport.addEventListener('touchstart', (event) => {
-  if (event.touches.length === 2) framePinchDistance = frameTouchDistance(event);
+  toggleScreenFrameZoom(event);
 });
-screenFrameViewport.addEventListener('touchmove', (event) => {
-  if (event.touches.length !== 2 || !framePinchDistance) return;
-  event.preventDefault();
-  const distance = frameTouchDistance(event);
-  if (Math.abs(distance - framePinchDistance) < 8) return;
-  const center = frameTouchCenter(event);
-  zoomScreenFrame(distance > framePinchDistance ? 0.12 : -0.12, center.x, center.y);
-  framePinchDistance = distance;
+screenFrameViewport.addEventListener('touchend', (event) => {
+  if (event.changedTouches.length !== 1) return;
+  const now = Date.now();
+  if (now - screenFrameLastTapAt < 320) {
+    event.preventDefault();
+    toggleScreenFrameZoom(event.changedTouches[0]);
+    screenFrameLastTapAt = 0;
+    return;
+  }
+  screenFrameLastTapAt = now;
 }, { passive: false });
-screenFrameViewport.addEventListener('touchend', () => {
-  framePinchDistance = 0;
-});
 
 function vibrate() {
   if (settings.vibrate && 'vibrate' in navigator) navigator.vibrate(8);
@@ -975,7 +1140,7 @@ document.querySelectorAll('[data-click]').forEach((button) => {
     buttonDrag.moved = true;
     buttonDrag.x = event.clientX;
     buttonDrag.y = event.clientY;
-    moveMouse(dx, dy);
+    queueMouseMove(dx, dy);
   });
   function endButtonDrag() {
     if (!buttonDrag) return;
@@ -1256,7 +1421,7 @@ function runEdgeScroll(time) {
   const dy = Math.round(edgeVelocity(pointer.edgeY, 'y') * elapsed / 16);
   if (dx || dy) {
     pointer.moved = true;
-    moveMouse(dx, dy);
+    queueMouseMove(dx, dy);
   }
   edgeScrollFrame = window.requestAnimationFrame(runEdgeScroll);
 }
@@ -1283,7 +1448,7 @@ touchPad.addEventListener('pointermove', (event) => {
   pointer.x = event.clientX;
   pointer.y = event.clientY;
   updateEdgeScroll(event.clientX, event.clientY);
-  moveMouse(dx, dy);
+  queueMouseMove(dx, dy);
 });
 
 function endTouchPad(event) {

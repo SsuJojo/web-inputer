@@ -1,5 +1,5 @@
-const CACHE = 'remote-input-v55';
-const ASSETS = ['/', '/static/styles.css?v=20260610-01', '/static/app.js?v=20260610-01', '/manifest.webmanifest?v=20260610-01'];
+const CACHE = 'remote-input-v56';
+const ASSETS = ['/', '/static/styles.css?v=20260703-01', '/static/vendor/panzoom.min.js?v=20260703-01', '/static/app.js?v=20260703-01', '/manifest.webmanifest?v=20260610-01'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));

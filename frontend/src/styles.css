@@ -134,7 +134,7 @@ h2 { margin: 0; font-size: 18px; }
 .key-row.qwerty { grid-template-columns: repeat(10, 1fr); }
 .key-row.home { grid-template-columns: repeat(9, 1fr); padding: 0 4.8%; }
 .key-row.bottom { grid-template-columns: repeat(7, 1fr); padding: 0 9.6%; }
-.key-row.space { grid-template-columns: 0.42fr 1fr 0.42fr; padding: 0 6%; }
+.key-row.space { grid-template-columns: 1fr 1fr 1fr; padding: 0 6%; }
 .fn-key.active { background: linear-gradient(135deg, #22c55e, #0ea5e9); color: white; }
 .lock-icon { margin-right: 4px; }
 

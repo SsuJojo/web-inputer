@@ -42,7 +42,7 @@ watch(() => props.modelValue, () => {})
     </div>
     <div class="row two">
       <n-button type="primary" @click="$emit('send', { pressEnterAfterText: false })">发送文本</n-button>
-      <n-button secondary @click="$emit('clipboard')">同步剪贴板</n-button>
+      <n-button secondary class="sync-button" @click="$emit('clipboard')">同步剪贴板</n-button>
     </div>
   </n-card>
 </template>

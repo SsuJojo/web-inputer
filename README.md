@@ -51,6 +51,21 @@ web-inputer/
 - 可用 NSSM 注册 Windows Service，开机自启、后台运行、崩溃恢复
 - Cloudflare Tunnel 反向代理到本地服务，支持 HTTPS/WSS
 
+## 前端开发
+
+本项目的页面源码在 `frontend/`，使用 Vue 3 + Vite + pnpm + Naive UI。生产仍由 FastAPI 服务 `app/static/dist` 的构建产物。
+
+```powershell
+pnpm --dir frontend install
+pnpm --dir frontend build
+```
+
+开发时先启动后端，再启动 Vite：
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -m uvicorn app.main:app --host 127.0.0.1 --port 8790 --reload --proxy-headers --forwarded-allow-ips='*'
+pnpm --dir frontend dev
+```
 ## Windows 本地启动
 
 1. 安装 Python 3.11+。
@@ -210,13 +225,13 @@ WebSocket 输入消息示例：
 后端语法检查：
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall app
+.\.venv\Scripts\python.exe -X utf8 -m compileall app
 ```
 
 启动调试：
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8790 --reload --proxy-headers --forwarded-allow-ips='*'
+.\.venv\Scripts\python.exe -X utf8 -m uvicorn app.main:app --host 127.0.0.1 --port 8790 --reload --proxy-headers --forwarded-allow-ips='*'
 ```
 
 Cloudflare 调试：
@@ -268,3 +283,4 @@ Docker 可用于开发或非 Windows 环境，但容器内无法直接注入 Win
 ```powershell
 docker compose up --build
 ```
+

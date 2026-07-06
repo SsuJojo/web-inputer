@@ -106,13 +106,31 @@ async def security_headers(request: Request, call_next: Any) -> Response:
     return response
 
 
-@app.get("/", include_in_schema=False)
-async def index() -> HTMLResponse:
-    content = (static_dir / "index.html").read_text(encoding="utf-8")
+def frontend_index_path() -> Path:
+    built_index = static_dir / "dist" / "index.html"
+    if built_index.exists():
+        return built_index
+    return static_dir / "index.html"
+
+
+def inject_public_origin(content: str) -> str:
     public_origin = json.dumps(settings.public_origin.rstrip("/"))
     config_script = f"<script>window.PUBLIC_ORIGIN = {public_origin};</script>"
-    content = content.replace("  <script src=\"/static/app.js", f"  {config_script}\n  <script src=\"/static/app.js", 1)
-    return HTMLResponse(content)
+    if "window.PUBLIC_ORIGIN" in content:
+        return content
+    if "<script type=\"module\"" in content:
+        return content.replace("<script type=\"module\"", f"{config_script}\n    <script type=\"module\"", 1)
+    if "  <script src=\"/static/app.js" in content:
+        return content.replace("  <script src=\"/static/app.js", f"  {config_script}\n  <script src=\"/static/app.js", 1)
+    if "</body>" in content:
+        return content.replace("</body>", f"  {config_script}\n</body>", 1)
+    return f"{config_script}\n{content}"
+
+
+@app.get("/", include_in_schema=False)
+async def index() -> HTMLResponse:
+    content = frontend_index_path().read_text(encoding="utf-8")
+    return HTMLResponse(inject_public_origin(content))
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
@@ -414,3 +432,5 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         with contextlib.suppress(asyncio.CancelledError):
             await window_state_task
         await release_control(client_id)
+
+

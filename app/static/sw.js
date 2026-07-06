@@ -1,16 +1,27 @@
-const CACHE = 'remote-input-v56';
-const ASSETS = ['/', '/static/styles.css?v=20260703-01', '/static/vendor/panzoom.min.js?v=20260703-01', '/static/app.js?v=20260703-01', '/manifest.webmanifest?v=20260610-01'];
+const CACHE_NAME = 'remote-input-vue-20260706-01';
+const STATIC_ASSETS = [
+  '/manifest.webmanifest',
+  '/static/vendor/panzoom.min.js',
+];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)));
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))));
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+  );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  const request = event.request;
+  if (request.method !== 'GET') return;
+  if (request.mode === 'navigate') {
+    event.respondWith(fetch(request).catch(() => caches.match('/')));
+    return;
+  }
+  event.respondWith(caches.match(request).then((cached) => cached || fetch(request)));
 });
-

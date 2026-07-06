@@ -28,7 +28,7 @@ from app.auth import (
 )
 from app.config import Settings, get_settings
 from app.input_controller import InputController, InputEvent
-from app.power_control import PowerActionRequest, PowerController, PowerScheduleRequest, PowerStatus
+from app.power_control import PowerAction, PowerActionRequest, PowerCommandError, PowerCommandRequest, PowerController, PowerScheduleRequest, PowerStatus
 from app.screen_preview import ScreenPreviewer
 from app.window_switcher import WindowSwitcher
 
@@ -108,13 +108,31 @@ async def security_headers(request: Request, call_next: Any) -> Response:
     return response
 
 
-@app.get("/", include_in_schema=False)
-async def index() -> HTMLResponse:
-    content = (static_dir / "index.html").read_text(encoding="utf-8")
+def frontend_index_path() -> Path:
+    built_index = static_dir / "dist" / "index.html"
+    if built_index.exists():
+        return built_index
+    return static_dir / "index.html"
+
+
+def inject_public_origin(content: str) -> str:
     public_origin = json.dumps(settings.public_origin.rstrip("/"))
     config_script = f"<script>window.PUBLIC_ORIGIN = {public_origin};</script>"
-    content = content.replace("  <script src=\"/static/app.js", f"  {config_script}\n  <script src=\"/static/app.js", 1)
-    return HTMLResponse(content)
+    if "window.PUBLIC_ORIGIN" in content:
+        return content
+    if "<script type=\"module\"" in content:
+        return content.replace("<script type=\"module\"", f"{config_script}\n    <script type=\"module\"", 1)
+    if "  <script src=\"/static/app.js" in content:
+        return content.replace("  <script src=\"/static/app.js", f"  {config_script}\n  <script src=\"/static/app.js", 1)
+    if "</body>" in content:
+        return content.replace("</body>", f"  {config_script}\n</body>", 1)
+    return f"{config_script}\n{content}"
+
+
+@app.get("/", include_in_schema=False)
+async def index() -> HTMLResponse:
+    content = frontend_index_path().read_text(encoding="utf-8")
+    return HTMLResponse(inject_public_origin(content))
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
@@ -238,13 +256,40 @@ async def logout() -> dict[str, bool]:
     return response
 
 
-@app.get("/api/power/status", response_model=PowerStatus)
+@app.get("/api/power/status", response_model=PowerStatus, response_model_by_alias=True)
 async def power_status(request: Request) -> PowerStatus:
     require_session(request, settings)
-    return power_controller.current_schedule() or PowerStatus(status="idle")
+    scheduled = power_controller.current_schedule()
+    if scheduled is None:
+        return PowerStatus(status="idle")
+    return PowerStatus(
+        status="scheduled",
+        scheduled=scheduled,
+        id=scheduled.id,
+        action=scheduled.action,
+    )
 
 
-@app.post("/api/power/execute", response_model=PowerStatus)
+async def execute_power_command(action: PowerAction, payload: PowerCommandRequest) -> PowerStatus:
+    requested_action = payload.action or action
+    if requested_action != action:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Action mismatch")
+    try:
+        if payload.delaySeconds > 0:
+            return await power_controller.schedule(PowerScheduleRequest(
+                action=action,
+                delaySeconds=payload.delaySeconds,
+                confirm=payload.confirm,
+            ))
+        power_controller.validate_confirmation(action, payload.confirm)
+        return power_controller.execute_now(action)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PowerCommandError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+@app.post("/api/power/execute", response_model=PowerStatus, response_model_by_alias=True)
 async def power_execute(payload: PowerActionRequest, request: Request) -> PowerStatus:
     require_session(request, settings)
     try:
@@ -252,15 +297,19 @@ async def power_execute(payload: PowerActionRequest, request: Request) -> PowerS
         return power_controller.execute_now(payload.action)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PowerCommandError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
-@app.post("/api/power/schedule", response_model=PowerStatus)
+@app.post("/api/power/schedule", response_model=PowerStatus, response_model_by_alias=True)
 async def power_schedule(payload: PowerScheduleRequest, request: Request) -> PowerStatus:
     require_session(request, settings)
     try:
         return await power_controller.schedule(payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PowerCommandError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @app.post("/api/power/cancel")
@@ -268,6 +317,12 @@ async def power_cancel(request: Request) -> dict[str, bool]:
     require_session(request, settings)
     cancelled = power_controller.cancel_schedule()
     return {"ok": True, "cancelled": cancelled}
+
+
+@app.post("/api/power/{action}", response_model=PowerStatus, response_model_by_alias=True)
+async def power_action(action: PowerAction, payload: PowerCommandRequest, request: Request) -> PowerStatus:
+    require_session(request, settings)
+    return await execute_power_command(action, payload)
 
 
 class EventLimiter:
@@ -448,3 +503,5 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         with contextlib.suppress(asyncio.CancelledError):
             await window_state_task
         await release_control(client_id)
+
+

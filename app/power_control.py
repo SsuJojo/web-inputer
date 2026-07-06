@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import subprocess
 import time
 from dataclasses import dataclass
@@ -8,7 +9,14 @@ from enum import StrEnum
 from typing import Callable
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+logger = logging.getLogger(__name__)
+
+
+class PowerCommandError(RuntimeError):
+    pass
 
 
 class PowerAction(StrEnum):
@@ -19,24 +27,55 @@ class PowerAction(StrEnum):
     LOCK = "lock"
 
 
+def normalize_delay_seconds(data: object) -> object:
+    if isinstance(data, dict) and "delay_seconds" in data and "delaySeconds" not in data:
+        return {**data, "delaySeconds": data["delay_seconds"]}
+    return data
+
+
+class PowerCommandRequest(BaseModel):
+    action: PowerAction | None = None
+    delaySeconds: float = Field(default=0, ge=0, le=86400)
+    confirm: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_snake_case_delay(cls, data: object) -> object:
+        return normalize_delay_seconds(data)
+
+
 class PowerScheduleRequest(BaseModel):
     action: PowerAction
-    delay_seconds: float = Field(ge=0, le=86400)
-    confirm: bool
+    delaySeconds: float = Field(ge=0, le=86400)
+    confirm: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_snake_case_delay(cls, data: object) -> object:
+        return normalize_delay_seconds(data)
 
 
 class PowerActionRequest(BaseModel):
     action: PowerAction
-    confirm: bool
+    confirm: bool = False
+
+
+class ScheduledPowerStatus(BaseModel):
+    id: str
+    action: PowerAction
+    status: str = "scheduled"
+    delaySeconds: float
+    dueAt: float
+    remainingSeconds: float
 
 
 class PowerStatus(BaseModel):
+    available: bool = True
+    status: str
+    message: str | None = None
+    scheduled: ScheduledPowerStatus | None = None
     id: str | None = None
     action: PowerAction | None = None
-    status: str
-    delay_seconds: float | None = None
-    due_at: float | None = None
-    remaining_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -60,17 +99,22 @@ class PowerController:
             raise ValueError("Power action must be confirmed")
 
     def execute_now(self, action: PowerAction) -> PowerStatus:
-        self.command_runner(self.command_for(action))
+        try:
+            self.command_runner(self.command_for(action))
+        except PowerCommandError:
+            raise
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise PowerCommandError("Power command failed") from exc
         return PowerStatus(action=action, status="executed")
 
     async def schedule(self, request: PowerScheduleRequest) -> PowerStatus:
         self.validate_confirmation(request.action, request.confirm)
         self.cancel_schedule()
-        due_at = time.time() + request.delay_seconds
+        due_at = time.time() + request.delaySeconds
         schedule_id = uuid4().hex
-        task = asyncio.create_task(self._run_scheduled(schedule_id, request.action, request.delay_seconds))
+        task = asyncio.create_task(self._run_scheduled(schedule_id, request.action, request.delaySeconds))
         self._scheduled = ScheduledPowerAction(schedule_id, request.action, due_at, task)
-        return self._status_for(self._scheduled)
+        return self._status_response_for(self._scheduled)
 
     def cancel_schedule(self) -> bool:
         if not self._scheduled:
@@ -79,29 +123,41 @@ class PowerController:
         self._scheduled = None
         return True
 
-    def current_schedule(self) -> PowerStatus | None:
+    def current_schedule(self) -> ScheduledPowerStatus | None:
         if not self._scheduled:
             return None
-        return self._status_for(self._scheduled)
+        return self._scheduled_status_for(self._scheduled)
 
     async def _run_scheduled(self, schedule_id: str, action: PowerAction, delay_seconds: float) -> None:
         try:
             await asyncio.sleep(delay_seconds)
             if self._scheduled and self._scheduled.id == schedule_id:
                 self.execute_now(action)
-                self._scheduled = None
         except asyncio.CancelledError:
             raise
+        except Exception:
+            logger.exception("scheduled power command failed action=%s", action)
+        finally:
+            if self._scheduled and self._scheduled.id == schedule_id:
+                self._scheduled = None
 
-    def _status_for(self, schedule: ScheduledPowerAction) -> PowerStatus:
+    def _scheduled_status_for(self, schedule: ScheduledPowerAction) -> ScheduledPowerStatus:
         remaining = max(0.0, schedule.due_at - time.time())
-        return PowerStatus(
+        return ScheduledPowerStatus(
             id=schedule.id,
             action=schedule.action,
+            delaySeconds=remaining,
+            dueAt=schedule.due_at,
+            remainingSeconds=remaining,
+        )
+
+    def _status_response_for(self, schedule: ScheduledPowerAction) -> PowerStatus:
+        scheduled = self._scheduled_status_for(schedule)
+        return PowerStatus(
             status="scheduled",
-            delay_seconds=remaining,
-            due_at=schedule.due_at,
-            remaining_seconds=remaining,
+            scheduled=scheduled,
+            id=scheduled.id,
+            action=scheduled.action,
         )
 
     def command_for(self, action: PowerAction) -> list[str]:
@@ -115,4 +171,7 @@ class PowerController:
         return commands[action]
 
     def _run_command(self, command: list[str]) -> None:
-        subprocess.run(command, check=True)
+        try:
+            subprocess.run(command, check=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise PowerCommandError("Power command failed") from exc

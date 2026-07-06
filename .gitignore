@@ -8,6 +8,9 @@ logs/
 .worktrees/
 build/
 dist/
+!app/static/dist/
+!app/static/dist/**
+frontend/node_modules/
 memory/
 *.spec.bak
 .git_old/

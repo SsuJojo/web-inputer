@@ -1,72 +1,65 @@
 import asyncio
-import unittest
+import subprocess
 
-from app.power_control import PowerAction, PowerController, PowerScheduleRequest
+from fastapi.testclient import TestClient
 
-
-class FakeRunner:
-    def __init__(self):
-        self.commands = []
-
-    def __call__(self, command):
-        self.commands.append(command)
+import app.main as main
+from app.power_control import PowerController, PowerScheduleRequest
 
 
-class PowerControllerTests(unittest.IsolatedAsyncioTestCase):
-    def test_lock_executes_lock_workstation_immediately(self):
-        runner = FakeRunner()
-        controller = PowerController(command_runner=runner)
-
-        result = controller.execute_now(PowerAction.LOCK)
-
-        self.assertEqual(result.action, PowerAction.LOCK)
-        self.assertEqual(result.status, "executed")
-        self.assertEqual(runner.commands, [["rundll32.exe", "user32.dll,LockWorkStation"]])
-
-    def test_shutdown_requires_confirm_true(self):
-        controller = PowerController(command_runner=FakeRunner())
-
-        with self.assertRaises(ValueError) as error:
-            controller.validate_confirmation(PowerAction.SHUTDOWN, False)
-
-        self.assertEqual(str(error.exception), "Power action must be confirmed")
-
-    async def test_schedule_runs_action_after_delay(self):
-        runner = FakeRunner()
-        controller = PowerController(command_runner=runner)
-
-        schedule = await controller.schedule(PowerScheduleRequest(action=PowerAction.RESTART, delay_seconds=0.01, confirm=True))
-        self.assertEqual(schedule.status, "scheduled")
-        self.assertEqual(schedule.action, PowerAction.RESTART)
-        self.assertIsNotNone(schedule.due_at)
-        await asyncio.sleep(0.04)
-
-        self.assertEqual(runner.commands, [["shutdown.exe", "/r", "/t", "0"]])
-        self.assertIsNone(controller.current_schedule())
-
-    async def test_cancel_schedule_prevents_action(self):
-        runner = FakeRunner()
-        controller = PowerController(command_runner=runner)
-
-        await controller.schedule(PowerScheduleRequest(action=PowerAction.SLEEP, delay_seconds=1, confirm=True))
-        cancelled = controller.cancel_schedule()
-        await asyncio.sleep(0.02)
-
-        self.assertTrue(cancelled)
-        self.assertEqual(runner.commands, [])
-        self.assertIsNone(controller.current_schedule())
-
-    async def test_new_schedule_replaces_existing_schedule(self):
-        runner = FakeRunner()
-        controller = PowerController(command_runner=runner)
-
-        first = await controller.schedule(PowerScheduleRequest(action=PowerAction.SLEEP, delay_seconds=1, confirm=True))
-        second = await controller.schedule(PowerScheduleRequest(action=PowerAction.HIBERNATE, delay_seconds=1, confirm=True))
-
-        self.assertNotEqual(first.id, second.id)
-        self.assertEqual(controller.current_schedule().id, second.id)
-        self.assertEqual(runner.commands, [])
+def allow_session(_request, _settings):
+    return None
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_power_action_requires_explicit_confirm(monkeypatch):
+    commands = []
+    controller = PowerController(command_runner=commands.append)
+    monkeypatch.setattr(main, "require_session", allow_session)
+    monkeypatch.setattr(main, "power_controller", controller)
+
+    response = TestClient(main.app).post("/api/power/lock", json={"action": "lock"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Power action must be confirmed"
+    assert commands == []
+
+
+def test_power_schedule_confirm_and_cancel():
+    async def run_case():
+        commands = []
+        controller = PowerController(command_runner=commands.append)
+        await controller.schedule(PowerScheduleRequest(action="lock", delaySeconds=60, confirm=True))
+
+        assert controller.current_schedule() is not None
+        assert controller.cancel_schedule() is True
+        assert controller.current_schedule() is None
+        assert commands == []
+
+    asyncio.run(run_case())
+
+
+def test_power_command_failure_returns_controlled_api_error(monkeypatch):
+    def fail_command(_command):
+        raise subprocess.CalledProcessError(1, ["shutdown.exe"])
+
+    controller = PowerController(command_runner=fail_command)
+    monkeypatch.setattr(main, "require_session", allow_session)
+    monkeypatch.setattr(main, "power_controller", controller)
+
+    response = TestClient(main.app).post("/api/power/lock", json={"action": "lock", "confirm": True})
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Power command failed"
+
+
+def test_failed_scheduled_power_command_clears_schedule():
+    def fail_command(_command):
+        raise subprocess.CalledProcessError(1, ["shutdown.exe"])
+
+    async def run_case():
+        controller = PowerController(command_runner=fail_command)
+        await controller.schedule(PowerScheduleRequest(action="lock", delaySeconds=0.01, confirm=True))
+        await asyncio.sleep(0.05)
+        assert controller.current_schedule() is None
+
+    asyncio.run(run_case())

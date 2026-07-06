@@ -28,6 +28,7 @@ from app.auth import (
 )
 from app.config import Settings, get_settings
 from app.input_controller import InputController, InputEvent
+from app.power_control import PowerAction, PowerActionRequest, PowerCommandRequest, PowerController, PowerScheduleRequest, PowerStatus
 from app.screen_preview import ScreenPreviewer
 from app.window_switcher import WindowSwitcher
 
@@ -37,6 +38,7 @@ login_limiter = LoginLimiter(settings.login_rate_limit_count, settings.login_rat
 input_controller = InputController(settings)
 screen_previewer = ScreenPreviewer(settings)
 window_switcher = WindowSwitcher()
+power_controller = PowerController()
 active_controller_id: str | None = None
 active_controller_seen = 0.0
 active_controller_lock = None
@@ -252,6 +254,69 @@ async def logout() -> dict[str, bool]:
     response = JSONResponse({"ok": True})
     response.delete_cookie("remote_input_session", path="/")
     return response
+
+
+@app.get("/api/power/status", response_model=PowerStatus, response_model_by_alias=True)
+async def power_status(request: Request) -> PowerStatus:
+    require_session(request, settings)
+    scheduled = power_controller.current_schedule()
+    if scheduled is None:
+        return PowerStatus(status="idle")
+    return PowerStatus(
+        status="scheduled",
+        scheduled=scheduled,
+        id=scheduled.id,
+        action=scheduled.action,
+    )
+
+
+async def execute_power_command(action: PowerAction, payload: PowerCommandRequest) -> PowerStatus:
+    requested_action = payload.action or action
+    if requested_action != action:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Action mismatch")
+    try:
+        if payload.delaySeconds > 0:
+            return await power_controller.schedule(PowerScheduleRequest(
+                action=action,
+                delaySeconds=payload.delaySeconds,
+                confirm=payload.confirm,
+            ))
+        power_controller.validate_confirmation(action, payload.confirm)
+        return power_controller.execute_now(action)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.post("/api/power/execute", response_model=PowerStatus, response_model_by_alias=True)
+async def power_execute(payload: PowerActionRequest, request: Request) -> PowerStatus:
+    require_session(request, settings)
+    try:
+        power_controller.validate_confirmation(payload.action, payload.confirm)
+        return power_controller.execute_now(payload.action)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.post("/api/power/schedule", response_model=PowerStatus, response_model_by_alias=True)
+async def power_schedule(payload: PowerScheduleRequest, request: Request) -> PowerStatus:
+    require_session(request, settings)
+    try:
+        return await power_controller.schedule(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.post("/api/power/cancel")
+async def power_cancel(request: Request) -> dict[str, bool]:
+    require_session(request, settings)
+    cancelled = power_controller.cancel_schedule()
+    return {"ok": True, "cancelled": cancelled}
+
+
+@app.post("/api/power/{action}", response_model=PowerStatus, response_model_by_alias=True)
+async def power_action(action: PowerAction, payload: PowerCommandRequest, request: Request) -> PowerStatus:
+    require_session(request, settings)
+    return await execute_power_command(action, payload)
 
 
 class EventLimiter:

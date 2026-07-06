@@ -66,6 +66,7 @@ pnpm --dir frontend build
 .\.venv\Scripts\python.exe -X utf8 -m uvicorn app.main:app --host 127.0.0.1 --port 8790 --reload --proxy-headers --forwarded-allow-ips='*'
 pnpm --dir frontend dev
 ```
+
 ## Windows 本地启动
 
 1. 安装 Python 3.11+。

@@ -38,7 +38,7 @@ watch(() => props.modelValue, () => {})
     <label class="label">文本输入</label>
     <div class="text-input-row">
       <n-input ref="inputRef" :value="modelValue" type="textarea" :autosize="false" :resizable="false" placeholder="输入文字后按 Enter 发送" :class="{ expanded }" @update:value="update" @keydown="handleKeydown" />
-      <n-button secondary class="newline-button" aria-label="插入换行" @click="insertNewline">↵</n-button>
+      <n-button secondary class="newline-button" aria-label="插入换行" @click="insertNewline"><span class="newline-glyph">↵</span></n-button>
     </div>
     <div class="row two text-actions">
       <n-button type="primary" @click="$emit('send', { pressEnterAfterText: false })">发送文本</n-button>

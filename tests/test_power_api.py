@@ -25,6 +25,17 @@ class PowerApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    def test_power_status_includes_server_time(self):
+        controller = Mock(spec=PowerController)
+        controller.current_schedule.return_value = None
+        main.power_controller = controller
+
+        response = self.client.get("/api/power/status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "idle")
+        self.assertIsInstance(response.json()["serverTime"], float)
+
     def test_power_execute_runs_confirmed_action(self):
         controller = Mock(spec=PowerController)
         controller.validate_confirmation.return_value = None

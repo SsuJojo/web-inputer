@@ -72,6 +72,7 @@ class ScheduledPowerStatus(BaseModel):
 class PowerStatus(BaseModel):
     available: bool = True
     status: str
+    serverTime: float = Field(default_factory=time.time)
     message: str | None = None
     scheduled: ScheduledPowerStatus | None = None
     id: str | None = None
@@ -161,9 +162,21 @@ class PowerController:
         )
 
     def command_for(self, action: PowerAction) -> list[str]:
+        # Sleep intentionally uses the Windows Forms API instead of the old
+        # rundll32 SetSuspendState call, which can hibernate when hibernation is
+        # enabled by system policy. Windows may still choose a modern standby
+        # path depending on hardware and power configuration.
+        sleep_command = [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false) | Out-Null",
+        ]
         commands: dict[PowerAction, list[str]] = {
-            PowerAction.SLEEP: ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"],
-            PowerAction.HIBERNATE: ["rundll32.exe", "powrprof.dll,SetSuspendState", "1,1,0"],
+            PowerAction.SLEEP: sleep_command,
+            PowerAction.HIBERNATE: ["shutdown.exe", "/h"],
             PowerAction.SHUTDOWN: ["shutdown.exe", "/s", "/t", "0"],
             PowerAction.RESTART: ["shutdown.exe", "/r", "/t", "0"],
             PowerAction.LOCK: ["rundll32.exe", "user32.dll,LockWorkStation"],

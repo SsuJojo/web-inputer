@@ -11,6 +11,13 @@ def allow_session(_request, _settings):
     return None
 
 
+def test_windows_power_command_mapping_uses_explicit_sleep_and_hibernate_commands():
+    controller = PowerController()
+
+    assert controller.command_for("hibernate") == ["shutdown.exe", "/h"]
+    assert controller.command_for("sleep") == ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false) | Out-Null"]
+
+
 def test_power_action_requires_explicit_confirm(monkeypatch):
     commands = []
     controller = PowerController(command_runner=commands.append)

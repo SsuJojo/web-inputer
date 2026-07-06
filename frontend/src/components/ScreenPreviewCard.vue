@@ -1,13 +1,38 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 
 const props = defineProps({ enabled: Boolean, streamUrl: String, title: String, cursorStyle: Object })
-defineEmits(['toggle', 'desktop', 'open-frame', 'image-load'])
+const emit = defineEmits(['toggle', 'desktop', 'create-desktop', 'open-frame', 'image-load'])
 const stageRef = ref(null)
 const imageRef = ref(null)
 const ariaPressed = computed(() => String(props.enabled))
+let desktopPressTimer = 0
+let desktopLongPressed = false
 
 defineExpose({ stageRef, imageRef })
+
+function startDesktopPress() {
+  desktopLongPressed = false
+  window.clearTimeout(desktopPressTimer)
+  desktopPressTimer = window.setTimeout(() => {
+    desktopLongPressed = true
+    emit('create-desktop')
+  }, 520)
+}
+
+function endDesktopPress() {
+  window.clearTimeout(desktopPressTimer)
+}
+
+function clickRightDesktop() {
+  if (desktopLongPressed) {
+    desktopLongPressed = false
+    return
+  }
+  emit('desktop', 'right')
+}
+
+onBeforeUnmount(() => window.clearTimeout(desktopPressTimer))
 </script>
 
 <template>
@@ -17,7 +42,7 @@ defineExpose({ stageRef, imageRef })
       <button class="screen-toggle" type="button" :aria-label="enabled ? '关闭屏幕预览' : '开启屏幕预览'" :aria-pressed="ariaPressed" @click="$emit('toggle')">
         <span class="screen-toggle-main">{{ enabled ? '关闭预览' : '开启预览' }}</span>
       </button>
-      <n-button secondary @click="$emit('desktop', 'right')">桌面 →</n-button>
+      <n-button secondary aria-label="短按切换到右侧桌面，长按新建桌面" @pointerdown="startDesktopPress" @pointerup="endDesktopPress" @pointercancel="endDesktopPress" @pointerleave="endDesktopPress" @click="clickRightDesktop">桌面 →</n-button>
     </div>
     <div class="screen-preview" :class="enabled ? 'on' : 'off'" role="button" aria-label="预览当前屏幕截图" @click="$emit('open-frame')">
       <div ref="stageRef" class="screen-stage">

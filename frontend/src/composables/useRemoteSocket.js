@@ -194,10 +194,22 @@ export function useRemoteSocket(options = {}) {
     sendInput({ action: 'up', key })
   }
 
+  function sendCombo(modifiers, key) {
+    const pressedByCombo = []
+    for (const modifier of modifiers) {
+      if (!heldKeys.has(modifier)) {
+        keyDown(modifier)
+        pressedByCombo.push(modifier)
+      }
+    }
+    tap(key)
+    for (const modifier of pressedByCombo.reverse()) keyUp(modifier)
+  }
+
   function releaseHeldKeys() {
     for (const key of Array.from(heldKeys)) keyUp(key)
     flushClientLogs()
   }
 
-  return { connected, statusText, statusKind, latencyText, currentWindowTitle, heldKeys, setCallbacks, connect, disconnect, send, sendInput, sendWindowControl, startWindowStatePolling, stopWindowStatePolling, tap, keyDown, keyUp, releaseHeldKeys, queueClientLog, logSwitch }
+  return { connected, statusText, statusKind, latencyText, currentWindowTitle, heldKeys, setCallbacks, connect, disconnect, send, sendInput, sendWindowControl, startWindowStatePolling, stopWindowStatePolling, tap, keyDown, keyUp, sendCombo, releaseHeldKeys, queueClientLog, logSwitch }
 }

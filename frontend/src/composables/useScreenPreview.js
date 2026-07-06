@@ -3,7 +3,7 @@ import { computed, nextTick, ref } from 'vue'
 const CURSOR_POLL_WEB_MS = 200
 const CURSOR_POLL_PHYSICAL_MS = 80
 
-export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, keyUp, queueClientLog, currentWindowTitle }) {
+export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, keyUp, sendCombo, queueClientLog, currentWindowTitle }) {
   const enabled = ref(false)
   const streamUrl = ref('')
   const frameModalOpen = ref(false)
@@ -103,12 +103,27 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
   }
 
   function switchDesktop(direction) {
-    keyDown('win')
-    keyDown('ctrl')
-    tap(direction === 'left' ? 'left' : 'right')
-    keyUp('ctrl')
-    keyUp('win')
+    if (sendCombo) sendCombo(['win', 'ctrl'], direction === 'left' ? 'left' : 'right')
+    else {
+      keyDown('win')
+      keyDown('ctrl')
+      tap(direction === 'left' ? 'left' : 'right')
+      keyUp('ctrl')
+      keyUp('win')
+    }
     window.setTimeout(() => sendWindowControl('desktop_changed', { direction }), 450)
+  }
+
+  function createDesktop() {
+    if (sendCombo) sendCombo(['win', 'ctrl'], 'd')
+    else {
+      keyDown('win')
+      keyDown('ctrl')
+      tap('d')
+      keyUp('ctrl')
+      keyUp('win')
+    }
+    window.setTimeout(() => sendWindowControl('desktop_changed', { direction: 'new' }), 450)
   }
 
   function switchWindow(direction) {
@@ -245,5 +260,5 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     screenFrameLastTapAt = now
   }
 
-  return { enabled, streamUrl, frameModalOpen, frameUrl, closeAlignRight, formattedWindowTitle, setScreenPreview, toggleScreenPreview, switchDesktop, switchWindow, updateCursor, openScreenFrame, closeScreenFrame, toggleScreenFrameZoom, handleFrameTouchEnd, refreshScreenFrame }
+  return { enabled, streamUrl, frameModalOpen, frameUrl, closeAlignRight, formattedWindowTitle, setScreenPreview, toggleScreenPreview, switchDesktop, createDesktop, switchWindow, updateCursor, openScreenFrame, closeScreenFrame, toggleScreenFrameZoom, handleFrameTouchEnd, refreshScreenFrame }
 }

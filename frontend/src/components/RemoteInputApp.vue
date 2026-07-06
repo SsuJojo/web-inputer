@@ -37,7 +37,7 @@ socket.setCallbacks({
   scheduleDirectFallback: session.scheduleDirectFallback,
   clearDirectFallback: session.clearDirectFallback,
 })
-const screenPreview = useScreenPreview({ cursorSync, sendWindowControl: socket.sendWindowControl, tap: socket.tap, keyDown: socket.keyDown, keyUp: socket.keyUp, queueClientLog: socket.queueClientLog, currentWindowTitle: socket.currentWindowTitle })
+const screenPreview = useScreenPreview({ cursorSync, sendWindowControl: socket.sendWindowControl, tap: socket.tap, keyDown: socket.keyDown, keyUp: socket.keyUp, sendCombo: socket.sendCombo, queueClientLog: socket.queueClientLog, currentWindowTitle: socket.currentWindowTitle })
 
 function vibrate() {
   if (settings.vibrate && 'vibrate' in navigator) navigator.vibrate(8)
@@ -75,19 +75,31 @@ async function handleLogout() {
 
 function sendText({ pressEnterAfterText = false } = {}) {
   const text = settings.textInput || ''
-  if (text) {
-    socket.sendInput({ action: 'text', text })
-    if (pressEnterAfterText) socket.tap('enter')
+  const hasText = text.length > 0
+  let ok = true
+  if (hasText) {
+    ok = socket.sendInput({ action: 'text', text })
+    if (ok && pressEnterAfterText) ok = socket.tap('enter')
   } else {
-    socket.tap('enter')
+    ok = socket.tap('enter')
   }
-  settings.textInput = ''
-  saveSettings(settings)
+  if (!ok) {
+    message.error('未连接电脑，发送失败')
+    return
+  }
+  if (hasText) {
+    message.success(pressEnterAfterText ? '文本已发送，并已发送 Enter' : '文本已发送')
+    settings.textInput = ''
+    saveSettings(settings)
+  } else {
+    message.success('已发送 Enter')
+  }
 }
 
 function syncClipboard() {
-  socket.sendInput({ action: 'clipboard_set', text: settings.textInput || '' })
-  message.success('剪贴板同步指令已发送')
+  const ok = socket.sendInput({ action: 'clipboard_set', text: settings.textInput || '' })
+  if (ok) message.success('剪贴板同步指令已发送')
+  else message.error('未连接电脑，剪贴板同步失败')
 }
 
 function toggleModifier(key) {
@@ -162,6 +174,7 @@ onBeforeUnmount(() => {
         :cursor-style="cursorStyle"
         @toggle="screenPreview.toggleScreenPreview"
         @desktop="screenPreview.switchDesktop"
+        @create-desktop="screenPreview.createDesktop"
         @open-frame="openFrame"
         @image-load="updateCursorStyle"
       />

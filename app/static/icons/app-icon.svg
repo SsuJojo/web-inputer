@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Remote Input app icon</title>
+  <desc id="desc">A compact remote keyboard and touch cursor icon in a blue glass style.</desc>
+  <defs>
+    <linearGradient id="bg" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.48" stop-color="#dbeafe"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="224" y1="224" x2="800" y2="800" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#eff6ff" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="336" y1="308" x2="710" y2="726" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="30" stdDeviation="34" flood-color="#0f172a" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <circle cx="798" cy="194" r="132" fill="#ffffff" opacity="0.28"/>
+  <circle cx="190" cy="820" r="180" fill="#2563eb" opacity="0.12"/>
+  <g filter="url(#shadow)">
+    <rect x="176" y="218" width="672" height="588" rx="148" fill="url(#panel)" stroke="#ffffff" stroke-width="16"/>
+    <rect x="284" y="336" width="456" height="132" rx="48" fill="#0f172a" opacity="0.92"/>
+    <path d="M382 664c-24 0-43-19-43-43v-12c0-24 19-43 43-43h260c24 0 43 19 43 43v12c0 24-19 43-43 43H382Z" fill="url(#accent)"/>
+    <g fill="#94a3b8">
+      <rect x="320" y="512" width="74" height="46" rx="18"/>
+      <rect x="416" y="512" width="74" height="46" rx="18"/>
+      <rect x="512" y="512" width="74" height="46" rx="18"/>
+      <rect x="608" y="512" width="74" height="46" rx="18"/>
+    </g>
+    <path d="M628 392l112 52-82 34 40 86-46 22-40-86-68 62 84-170Z" fill="#f8fafc" stroke="#2563eb" stroke-width="14" stroke-linejoin="round"/>
+  </g>
+</svg>

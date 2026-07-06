@@ -46,21 +46,32 @@ export function usePowerControl(message) {
   }
 
   function secondsUntilTime(value) {
-    const [hours, minutes] = String(value || '').split(':').map(Number)
-    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 0
+    const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || ''))
+    if (!match) return null
+    const hours = Number(match[1])
+    const minutes = Number(match[2])
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null
     const now = new Date()
     const target = new Date(now)
     target.setHours(hours, minutes, 0, 0)
     if (target <= now) target.setDate(target.getDate() + 1)
-    return Math.max(0, Math.round((target.getTime() - now.getTime()) / 1000))
+    const delaySeconds = Math.round((target.getTime() - now.getTime()) / 1000)
+    return delaySeconds > 0 ? delaySeconds : null
   }
 
   async function confirmPowerAction() {
     loading.value = true
     try {
-      const body = { action: selectedAction.value }
+      const body = { action: selectedAction.value, confirm: true }
       if (schedule.mode === 'countdown') body.delaySeconds = Math.max(0, Number(schedule.minutes || 0) * 60)
-      if (schedule.mode === 'time') body.delaySeconds = secondsUntilTime(schedule.time)
+      if (schedule.mode === 'time') {
+        const delaySeconds = secondsUntilTime(schedule.time)
+        if (!delaySeconds) {
+          message?.error?.('请选择有效的执行时间')
+          return null
+        }
+        body.delaySeconds = delaySeconds
+      }
       const result = await postPower(selectedAction.value, body)
       message?.success?.(`${actionLabel.value}指令已发送`)
       modalOpen.value = false

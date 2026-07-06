@@ -87,7 +87,7 @@ export function useSession(settings, logSwitch = () => {}) {
       logSwitch('direct-retry-wait', { delay })
       clearTimeout(directFallbackTimer)
       directFallbackTimer = window.setTimeout(() => { switchToSavedDirect() }, delay)
-      return true
+      return false
     }
     const url = directUrl()
     if (!url || isSavedDirectHost() || location.protocol !== 'https:') return false
@@ -98,7 +98,7 @@ export function useSession(settings, logSwitch = () => {}) {
     if (isDirectSuspect()) {
       logSwitch('direct-skip-suspect', { until: settings.directSuspectUntil })
       directFallbackTimer = window.setTimeout(() => { switchToSavedDirect() }, Math.max(1000, settings.directSuspectUntil - Date.now()))
-      return true
+      return false
     }
     if (!await probeSavedDirect()) {
       logSwitch('direct-probe-failed', { retryIn: 5000 })

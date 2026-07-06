@@ -21,9 +21,18 @@ export function createDefaultSettings(stored = {}) {
   }
 }
 
+function loadStoredSettings() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
+  } catch {
+    localStorage.removeItem(STORAGE_KEY)
+    return {}
+  }
+}
+
 export function loadSettings() {
-  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
-  const settings = reactive(createDefaultSettings(stored))
+  const settings = reactive(createDefaultSettings(loadStoredSettings()))
   hydrateDirectSettingsFromLocation(settings)
   return settings
 }

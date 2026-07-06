@@ -188,9 +188,7 @@ onBeforeUnmount(() => {
 
     <SettingsModal v-model:show="settingsOpen" :settings="settings" @save-direct="saveDirect" @open-direct="openDirect" />
     <PowerActionModal v-model:show="powerModalOpen" :loading="powerLoading" :action-label="powerActionLabel" :schedule="power.schedule" @confirm="power.confirmPowerAction" />
-    <div ref="frameModalRef">
-      <ScreenFrameModal :modal-open="frameModalOpen" :frame-url="frameUrl" :close-align-right="closeAlignRight" @close="closeFrame" @dblclick="screenPreview.toggleScreenFrameZoom" @touchend="screenPreview.handleFrameTouchEnd" />
-    </div>
+    <ScreenFrameModal ref="frameModalRef" :modal-open="frameModalOpen" :frame-url="frameUrl" :close-align-right="closeAlignRight" @close="closeFrame" @dblclick="screenPreview.toggleScreenFrameZoom" @touchend="screenPreview.handleFrameTouchEnd" />
   </main>
 </template>
 

@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { wsUrl, safeJsonParse } from '@/api/socket'
 import { postJson } from '@/api/http'
 
@@ -9,7 +9,7 @@ export function useRemoteSocket(options = {}) {
   const latencyMs = ref(null)
   const currentWindowTitle = ref('')
   const connected = ref(false)
-  const heldKeys = new Set()
+  const heldKeys = reactive(new Set())
   let ws = null
   let reconnectTimer = 0
   let heartbeatTimer = 0
@@ -18,6 +18,8 @@ export function useRemoteSocket(options = {}) {
   let eventId = 0
   let clientLogQueue = []
   let clientLogTimer = 0
+  let intentionalDisconnect = false
+  const intentionallyClosedSockets = new WeakSet()
 
   const latencyText = computed(() => latencyMs.value === null ? '-- ms' : `${latencyMs.value} ms`)
 
@@ -102,10 +104,12 @@ export function useRemoteSocket(options = {}) {
   }
 
   function connect() {
+    intentionalDisconnect = false
     clearTimeout(reconnectTimer)
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
     setStatus('连接中...')
     ws = new WebSocket(wsUrl())
+    const activeWs = ws
     ws.addEventListener('open', () => {
       connected.value = true
       lastPongAt = Date.now()
@@ -136,17 +140,23 @@ export function useRemoteSocket(options = {}) {
     })
     ws.addEventListener('close', () => {
       connected.value = false
+      stopHeartbeat()
+      stopWindowStatePolling()
+      if (intentionalDisconnect || intentionallyClosedSockets.has(activeWs) || ws !== activeWs) {
+        logSwitch('ws-close-intentional')
+        setStatus('未连接')
+        return
+      }
       logSwitch('ws-close')
       callbacks.markDirectSuspect?.('ws-close')
       setStatus('已断开，重连中...', 'error')
-      stopHeartbeat()
-      stopWindowStatePolling()
       callbacks.scheduleDirectFallback?.('ws-close')
       reconnectTimer = window.setTimeout(connect, 1200)
     })
     ws.addEventListener('error', () => {
       connected.value = false
       logSwitch('ws-error')
+      if (intentionalDisconnect || intentionallyClosedSockets.has(activeWs) || ws !== activeWs) return
       callbacks.markDirectSuspect?.('ws-error')
       setStatus('连接错误', 'error')
       callbacks.scheduleDirectFallback?.('ws-error')
@@ -154,12 +164,18 @@ export function useRemoteSocket(options = {}) {
   }
 
   function disconnect() {
+    intentionalDisconnect = true
     clearTimeout(reconnectTimer)
+    reconnectTimer = 0
     stopHeartbeat()
     stopWindowStatePolling()
-    if (ws) ws.close()
+    if (ws) {
+      intentionallyClosedSockets.add(ws)
+      ws.close()
+    }
     ws = null
     connected.value = false
+    setStatus('未连接')
   }
 
   function tap(key) {

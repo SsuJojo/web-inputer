@@ -28,7 +28,7 @@ from app.auth import (
 )
 from app.config import Settings, get_settings
 from app.input_controller import InputController, InputEvent
-from app.power_control import PowerAction, PowerActionRequest, PowerCommandRequest, PowerController, PowerScheduleRequest, PowerStatus
+from app.power_control import PowerAction, PowerActionRequest, PowerCommandError, PowerCommandRequest, PowerController, PowerScheduleRequest, PowerStatus
 from app.screen_preview import ScreenPreviewer
 from app.window_switcher import WindowSwitcher
 
@@ -285,6 +285,8 @@ async def execute_power_command(action: PowerAction, payload: PowerCommandReques
         return power_controller.execute_now(action)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PowerCommandError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @app.post("/api/power/execute", response_model=PowerStatus, response_model_by_alias=True)
@@ -295,6 +297,8 @@ async def power_execute(payload: PowerActionRequest, request: Request) -> PowerS
         return power_controller.execute_now(payload.action)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PowerCommandError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @app.post("/api/power/schedule", response_model=PowerStatus, response_model_by_alias=True)
@@ -304,6 +308,8 @@ async def power_schedule(payload: PowerScheduleRequest, request: Request) -> Pow
         return await power_controller.schedule(payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PowerCommandError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @app.post("/api/power/cancel")

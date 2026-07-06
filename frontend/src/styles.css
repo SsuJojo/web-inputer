@@ -134,8 +134,8 @@ h2 { margin: 0; font-size: 18px; }
 .key-row.qwerty { grid-template-columns: repeat(10, 1fr); }
 .key-row.home { grid-template-columns: repeat(9, 1fr); padding: 0 4.8%; }
 .key-row.bottom { grid-template-columns: repeat(7, 1fr); padding: 0 9.6%; }
-.key-row.space { grid-template-columns: 0.42fr 1fr 0.42fr; padding: 0 6%; }
-.fn-key { width: 44px; min-width: 44px; justify-self: end; }
+.key-row.space { grid-template-columns: 44px 1fr 0.42fr; padding: 0 6%; }
+.fn-key { width: 44px; min-width: 44px; justify-self: stretch; }
 .fn-key.active { background: linear-gradient(135deg, #22c55e, #0ea5e9); color: white; }
 .lock-icon { margin-right: 4px; }
 
@@ -209,7 +209,7 @@ h2 { margin: 0; font-size: 18px; }
   .key-row button { min-height: 40px; padding: 0 2px; border-radius: 13px; }
   .key-row.home { padding: 0 4%; }
   .key-row.bottom { padding: 0 5%; }
-  .key-row.space { padding: 0 4%; }
+  .key-row.space { grid-template-columns: 40px 1fr 0.42fr; padding: 0 4%; }
   .fn-key { width: 40px; min-width: 40px; }
   .power-card > .n-card-content { padding: 14px !important; }
   .power-subtitle { max-width: 34ch; }

@@ -39,7 +39,7 @@ function feedback(key) {
     const next = { ...bubbles.value }
     delete next[key]
     bubbles.value = next
-  }, 180)
+  }, 150)
 }
 
 function tap(key) {

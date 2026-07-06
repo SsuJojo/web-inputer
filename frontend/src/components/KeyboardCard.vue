@@ -94,7 +94,7 @@ function toggleModifier(key) {
         <button v-for="key in row.keys" :key="key" @pointerdown.prevent="down(key)" @pointerup="up(key)" @pointercancel="up(key)" @pointerleave="up(key)">{{ label(key) }}<span v-if="bubbles[key]" class="key-bubble">{{ label(key) }}</span></button>
       </div>
       <div class="key-row space">
-        <button class="fn-key" :class="{ active: fnActive }" :aria-label="`Fn ${fnActive ? '已锁定' : '未锁定'}`" :aria-pressed="fnActive" @click="toggleFn"><span class="lock-icon" aria-hidden="true">{{ fnActive ? '🔒' : '🔓' }}</span>Fn<span v-if="bubbles.fn" class="key-bubble">Fn</span></button>
+        <button class="fn-key" :class="{ active: fnActive }" :aria-label="`Fn ${fnActive ? '已锁定' : '未锁定'}`" :aria-pressed="fnActive" @click="toggleFn">Fn<span v-if="bubbles.fn" class="key-bubble">Fn</span></button>
         <button @click="tap('space')">{{ label('space') }}<span v-if="bubbles.space" class="key-bubble">{{ label('space') }}</span></button>
         <button @click="tap('enter')">{{ label('enter') }}<span v-if="bubbles.enter" class="key-bubble">{{ label('enter') }}</span></button>
       </div>

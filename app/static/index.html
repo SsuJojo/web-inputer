@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Remote Input</title>
   <link rel="manifest" href="/manifest.webmanifest?v=20260610-01">
-  <link rel="stylesheet" href="/static/styles.css?v=20260703-01">
+  <link rel="stylesheet" href="/static/styles.css?v=20260706-02">
 </head>
 <body>
   <main class="app">
@@ -114,6 +114,31 @@
         </div>
         <div id="keyPad" class="key-grid"></div>
       </section>
+
+      <section class="card power-card bottom-menu">
+        <button id="powerMenuToggle" class="section-head power-menu-toggle" type="button" aria-expanded="false">
+          <span>
+            <strong>电源控制</strong>
+            <small id="powerStatus">未设置定时</small>
+          </span>
+          <span id="powerMenuChevron">展开</span>
+        </button>
+        <div id="powerPanel" class="power-panel collapsed">
+          <div class="power-actions" id="powerActions">
+            <button class="secondary" data-power-action="sleep" type="button">睡眠</button>
+            <button class="secondary" data-power-action="hibernate" type="button">休眠</button>
+            <button class="danger" data-power-action="shutdown" type="button">关机</button>
+            <button class="danger" data-power-action="restart" type="button">重启</button>
+            <button class="secondary" data-power-action="lock" type="button">锁定</button>
+            <button id="powerCancelBtn" class="secondary" type="button">取消定时</button>
+          </div>
+          <div class="row">
+            <button id="powerRefreshBtn" class="secondary" type="button">刷新状态</button>
+            <button id="powerClosePanelBtn" class="ghost" type="button">收起</button>
+          </div>
+          <p id="powerMessage" class="hint"></p>
+        </div>
+      </section>
     </section>
   </main>
   <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
@@ -154,6 +179,45 @@
       </label>
     </section>
   </div>
+  <div id="powerModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="powerModalTitle">
+    <div class="modal-backdrop" id="powerModalBackdrop"></div>
+    <section class="modal-card power-modal-card">
+      <header class="modal-header">
+        <h2 id="powerModalTitle">电源控制</h2>
+        <button id="powerModalClose" class="ghost" type="button">关闭</button>
+      </header>
+      <div class="power-mode-tabs" role="tablist" aria-label="执行时间">
+        <button class="active" data-power-mode="now" type="button">立即</button>
+        <button data-power-mode="countdown" type="button">倒计时</button>
+        <button data-power-mode="time" type="button">目标时间</button>
+      </div>
+      <div id="powerCountdownPicker" class="picker-row hidden">
+        <label>
+          <span>分钟</span>
+          <select id="powerMinuteWheel" size="5"></select>
+        </label>
+        <label>
+          <span>秒</span>
+          <select id="powerSecondWheel" size="5"></select>
+        </label>
+      </div>
+      <div id="powerTimePicker" class="picker-row hidden">
+        <label>
+          <span>小时</span>
+          <select id="powerHourWheel" size="5"></select>
+        </label>
+        <label>
+          <span>分钟</span>
+          <select id="powerTargetMinuteWheel" size="5"></select>
+        </label>
+      </div>
+      <p id="powerModalSummary" class="hint">将立即执行</p>
+      <div class="row">
+        <button id="powerModalCancel" class="secondary" type="button">取消</button>
+        <button id="powerModalConfirm" class="danger" type="button">确认</button>
+      </div>
+    </section>
+  </div>
   <div id="screenFrameModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="屏幕截图预览">
     <div class="modal-backdrop" id="screenFrameBackdrop"></div>
     <section class="modal-card screen-frame-card">
@@ -166,7 +230,7 @@
     </section>
   </div>
   <script src="/static/vendor/panzoom.min.js?v=20260703-01"></script>
-  <script src="/static/app.js?v=20260703-01"></script>
+  <script src="/static/app.js?v=20260706-02"></script>
 </body>
 </html>
 

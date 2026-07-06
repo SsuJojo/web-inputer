@@ -42,6 +42,28 @@ const directHost = document.getElementById('directHost');
 const directPort = document.getElementById('directPort');
 const openDirectBtn = document.getElementById('openDirectBtn');
 const saveDirectBtn = document.getElementById('saveDirectBtn');
+const powerStatus = document.getElementById('powerStatus');
+const powerActions = document.getElementById('powerActions');
+const powerCancelBtn = document.getElementById('powerCancelBtn');
+const powerRefreshBtn = document.getElementById('powerRefreshBtn');
+const powerMessage = document.getElementById('powerMessage');
+const powerMenuToggle = document.getElementById('powerMenuToggle');
+const powerMenuChevron = document.getElementById('powerMenuChevron');
+const powerPanel = document.getElementById('powerPanel');
+const powerClosePanelBtn = document.getElementById('powerClosePanelBtn');
+const powerModal = document.getElementById('powerModal');
+const powerModalBackdrop = document.getElementById('powerModalBackdrop');
+const powerModalTitle = document.getElementById('powerModalTitle');
+const powerModalClose = document.getElementById('powerModalClose');
+const powerModalCancel = document.getElementById('powerModalCancel');
+const powerModalConfirm = document.getElementById('powerModalConfirm');
+const powerModalSummary = document.getElementById('powerModalSummary');
+const powerCountdownPicker = document.getElementById('powerCountdownPicker');
+const powerTimePicker = document.getElementById('powerTimePicker');
+const powerMinuteWheel = document.getElementById('powerMinuteWheel');
+const powerSecondWheel = document.getElementById('powerSecondWheel');
+const powerHourWheel = document.getElementById('powerHourWheel');
+const powerTargetMinuteWheel = document.getElementById('powerTargetMinuteWheel');
 
 let ws = null;
 let reconnectTimer = 0;
@@ -80,6 +102,10 @@ let cursorLogSeq = 0;
 let cursorPredictLogAt = 0;
 let clientLogQueue = [];
 let clientLogTimer = 0;
+let selectedPowerAction = 'lock';
+let selectedPowerMode = 'now';
+let pendingPowerAction = 'lock';
+let powerStatusTimer = 0;
 const heldKeys = new Set();
 
 const CursorAuthority = {
@@ -465,6 +491,183 @@ function sendInput(payload) {
 
 function sendWindowControl(action, payload = {}) {
   return send({ type: 'window', id: ++eventId, action, ...payload });
+}
+
+const POWER_LABELS = {
+  sleep: '睡眠',
+  hibernate: '休眠',
+  shutdown: '关机',
+  restart: '重启',
+  lock: '锁定',
+};
+
+function setPowerMessage(text, kind = '') {
+  powerMessage.textContent = text;
+  powerMessage.className = `hint ${kind}`;
+}
+
+function setPowerPanelOpen(open) {
+  powerPanel.classList.toggle('collapsed', !open);
+  powerMenuToggle.setAttribute('aria-expanded', String(open));
+  powerMenuChevron.textContent = open ? '收起' : '展开';
+}
+
+function selectPowerAction(action) {
+  selectedPowerAction = action;
+  document.querySelectorAll('[data-power-action]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.powerAction === action);
+  });
+}
+
+function populateWheel(select, count, formatter = (value) => String(value).padStart(2, '0')) {
+  select.textContent = '';
+  for (let value = 0; value < count; value += 1) {
+    const option = document.createElement('option');
+    option.value = String(value);
+    option.textContent = formatter(value);
+    select.appendChild(option);
+  }
+}
+
+function setupPowerWheels() {
+  populateWheel(powerMinuteWheel, 121, (value) => String(value));
+  populateWheel(powerSecondWheel, 60);
+  populateWheel(powerHourWheel, 24);
+  populateWheel(powerTargetMinuteWheel, 60);
+  const now = new Date();
+  powerHourWheel.value = String(now.getHours());
+  powerTargetMinuteWheel.value = String(now.getMinutes());
+}
+
+function setPowerMode(mode) {
+  selectedPowerMode = mode;
+  document.querySelectorAll('[data-power-mode]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.powerMode === mode);
+  });
+  powerCountdownPicker.classList.toggle('hidden', mode !== 'countdown');
+  powerTimePicker.classList.toggle('hidden', mode !== 'time');
+  updatePowerModalSummary();
+}
+
+function formatPowerRemaining(seconds) {
+  const safeSeconds = Math.max(0, Math.ceil(Number(seconds) || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  if (minutes <= 0) return `${remainder} 秒`;
+  return `${minutes} 分 ${remainder} 秒`;
+}
+
+function countdownDelaySeconds() {
+  const minutes = Number(powerMinuteWheel.value || 0);
+  const seconds = Number(powerSecondWheel.value || 0);
+  return Math.max(0, Math.round(minutes * 60 + seconds));
+}
+
+function targetTimeDelaySeconds() {
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(Number(powerHourWheel.value || 0), Number(powerTargetMinuteWheel.value || 0), 0, 0);
+  if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1);
+  return Math.max(1, Math.round((target.getTime() - now.getTime()) / 1000));
+}
+
+function selectedPowerDelaySeconds() {
+  if (selectedPowerMode === 'countdown') return countdownDelaySeconds();
+  if (selectedPowerMode === 'time') return targetTimeDelaySeconds();
+  return 0;
+}
+
+function updatePowerModalSummary() {
+  const label = POWER_LABELS[pendingPowerAction] || pendingPowerAction;
+  if (selectedPowerMode === 'now') {
+    powerModalSummary.textContent = `将立即${label}`;
+    return;
+  }
+  if (selectedPowerMode === 'countdown') {
+    const delay = countdownDelaySeconds();
+    powerModalSummary.textContent = delay > 0 ? `将在 ${formatPowerRemaining(delay)} 后${label}` : `将立即${label}`;
+    return;
+  }
+  powerModalSummary.textContent = `将在 ${powerHourWheel.value.padStart(2, '0')}:${powerTargetMinuteWheel.value.padStart(2, '0')} ${label}`;
+}
+
+function renderPowerStatus(status) {
+  if (!status || status.status === 'idle') {
+    powerStatus.textContent = '未设置定时';
+    clearInterval(powerStatusTimer);
+    powerStatusTimer = 0;
+    return;
+  }
+  const label = POWER_LABELS[status.action] || status.action;
+  if (status.status === 'executed') {
+    powerStatus.textContent = `已执行 ${label}`;
+    return;
+  }
+  powerStatus.textContent = `已定时 ${label}，剩余 ${formatPowerRemaining(status.remaining_seconds)}`;
+}
+
+async function refreshPowerStatus() {
+  try {
+    const res = await fetch('/api/power/status', { credentials: 'include' });
+    if (!res.ok) return;
+    renderPowerStatus(await res.json());
+  } catch (error) {
+    console.debug('[power:status]', error);
+  }
+}
+
+async function postPower(path, body = null) {
+  const options = { method: 'POST', credentials: 'include' };
+  if (body) {
+    options.headers = { 'Content-Type': 'application/json' };
+    options.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || '电源操作失败');
+  return data;
+}
+
+function openPowerModal(action) {
+  pendingPowerAction = action;
+  selectPowerAction(action);
+  const label = POWER_LABELS[action] || action;
+  powerModalTitle.textContent = `准备${label}`;
+  powerModalConfirm.textContent = `确认${label}`;
+  powerModalConfirm.classList.toggle('danger', action === 'shutdown' || action === 'restart');
+  setPowerMode('now');
+  powerModal.classList.remove('hidden');
+}
+
+function closePowerModal() {
+  powerModal.classList.add('hidden');
+}
+
+async function confirmPowerAction() {
+  const action = pendingPowerAction;
+  const delaySeconds = selectedPowerDelaySeconds();
+  const path = delaySeconds > 0 ? '/api/power/schedule' : '/api/power/execute';
+  const body = delaySeconds > 0 ? { action, delay_seconds: delaySeconds, confirm: true } : { action, confirm: true };
+  try {
+    const result = await postPower(path, body);
+    closePowerModal();
+    renderPowerStatus(result);
+    const label = POWER_LABELS[action] || action;
+    setPowerMessage(delaySeconds > 0 ? `已定时 ${label}` : `已确认 ${label}`);
+    if (delaySeconds > 0 && !powerStatusTimer) powerStatusTimer = window.setInterval(refreshPowerStatus, 1000);
+  } catch (error) {
+    setPowerMessage(String(error.message || error), 'error');
+  }
+}
+
+async function cancelPowerSchedule() {
+  try {
+    const result = await postPower('/api/power/cancel');
+    setPowerMessage(result.cancelled ? '已取消定时' : '当前没有定时');
+    await refreshPowerStatus();
+  } catch (error) {
+    setPowerMessage(String(error.message || error), 'error');
+  }
 }
 
 function setTouchToggleText(collapsed) {
@@ -1164,6 +1367,30 @@ settingsBtn.addEventListener('click', openSettings);
 settingsClose.addEventListener('click', closeSettings);
 settingsBackdrop.addEventListener('click', closeSettings);
 
+powerMenuToggle.addEventListener('click', () => setPowerPanelOpen(powerPanel.classList.contains('collapsed')));
+powerClosePanelBtn.addEventListener('click', () => setPowerPanelOpen(false));
+powerActions.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-power-action]');
+  if (!button) return;
+  openPowerModal(button.dataset.powerAction);
+});
+
+document.querySelectorAll('[data-power-mode]').forEach((button) => {
+  button.addEventListener('click', () => setPowerMode(button.dataset.powerMode));
+});
+
+[powerMinuteWheel, powerSecondWheel, powerHourWheel, powerTargetMinuteWheel].forEach((wheel) => {
+  wheel.addEventListener('change', updatePowerModalSummary);
+  wheel.addEventListener('input', updatePowerModalSummary);
+});
+
+powerModalClose.addEventListener('click', closePowerModal);
+powerModalCancel.addEventListener('click', closePowerModal);
+powerModalBackdrop.addEventListener('click', closePowerModal);
+powerModalConfirm.addEventListener('click', confirmPowerAction);
+powerCancelBtn.addEventListener('click', cancelPowerSchedule);
+powerRefreshBtn.addEventListener('click', refreshPowerStatus);
+
 bubbleSetting.addEventListener('change', () => {
   settings.keyBubble = bubbleSetting.checked;
   saveSettings();
@@ -1478,6 +1705,10 @@ touchPad.addEventListener('pointercancel', endTouchPad);
 touchPad.addEventListener('pointerleave', endTouchPad);
 
 applySettings();
+setupPowerWheels();
+selectPowerAction(selectedPowerAction);
+setPowerPanelOpen(false);
+refreshPowerStatus();
 updateScreenToggleText();
 
 if ('serviceWorker' in navigator) {

@@ -119,7 +119,14 @@ export function usePowerControl(message) {
     loading.value = true
     try {
       const body = { action: selectedAction.value, confirm: true }
-      if (schedule.mode === 'countdown') body.delaySeconds = Math.max(0, Number(schedule.minutes || 0) * 60)
+      if (schedule.mode === 'countdown') {
+        const minutes = Number(schedule.minutes)
+        if (!Number.isFinite(minutes) || minutes <= 0) {
+          message?.error?.('请输入大于 0 的倒计时分钟数')
+          return null
+        }
+        body.delaySeconds = minutes * 60
+      }
       if (schedule.mode === 'time') {
         const delaySeconds = secondsUntilTime(schedule.time)
         if (!delaySeconds) {

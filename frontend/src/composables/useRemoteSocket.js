@@ -179,31 +179,37 @@ export function useRemoteSocket(options = {}) {
   }
 
   function tap(key) {
-    sendInput({ action: 'tap', key })
+    return sendInput({ action: 'tap', key })
   }
 
   function keyDown(key) {
-    if (heldKeys.has(key)) return
+    if (heldKeys.has(key)) return true
+    if (!sendInput({ action: 'down', key })) return false
     heldKeys.add(key)
-    sendInput({ action: 'down', key })
+    return true
   }
 
   function keyUp(key) {
-    if (!heldKeys.has(key)) return
+    if (!heldKeys.has(key)) return true
+    if (!sendInput({ action: 'up', key })) return false
     heldKeys.delete(key)
-    sendInput({ action: 'up', key })
+    return true
   }
 
   function sendCombo(modifiers, key) {
     const pressedByCombo = []
     for (const modifier of modifiers) {
       if (!heldKeys.has(modifier)) {
-        keyDown(modifier)
+        if (!keyDown(modifier)) {
+          for (const pressed of pressedByCombo.reverse()) keyUp(pressed)
+          return false
+        }
         pressedByCombo.push(modifier)
       }
     }
-    tap(key)
+    const sent = tap(key)
     for (const modifier of pressedByCombo.reverse()) keyUp(modifier)
+    return sent
   }
 
   function releaseHeldKeys() {

@@ -4,6 +4,7 @@ import { darkTheme } from 'naive-ui'
 import RemoteInputApp from './components/RemoteInputApp.vue'
 
 const prefersDark = ref(true)
+const themeColors = { light: '#f7f8fb', dark: '#0f172a' }
 let mediaQuery = null
 
 const theme = computed(() => prefersDark.value ? darkTheme : null)
@@ -27,8 +28,19 @@ const themeOverrides = computed(() => ({
   },
 }))
 
+function applyBrowserTheme() {
+  const mode = prefersDark.value ? 'dark' : 'light'
+  document.documentElement.dataset.theme = mode
+  document.documentElement.style.colorScheme = mode
+  document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+    meta.setAttribute('content', themeColors[mode])
+  })
+  document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.setAttribute('content', prefersDark.value ? 'black-translucent' : 'default')
+}
+
 function syncSystemTheme(event) {
   prefersDark.value = Boolean(event.matches)
+  applyBrowserTheme()
 }
 
 onMounted(() => {

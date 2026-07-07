@@ -6,17 +6,10 @@ const emit = defineEmits(['tap', 'key-down', 'key-up', 'toggle-modifier'])
 const bubbles = ref({})
 const fnActive = ref(false)
 const digitKeys = '1234567890'.split('')
-const fnDigits = [
-  { key: 'f10', label: '10' },
-  { key: 'f11', label: '11' },
-  { key: 'f12', label: '12' },
-  { key: 'f1', label: '1' },
-  { key: 'f2', label: '2' },
-  { key: 'f3', label: '3' },
-  { key: 'f4', label: '4' },
-  { key: 'f5', label: '5' },
-  { key: 'f6', label: '6' },
-]
+const fnDigits = Array.from({ length: 12 }, (_, index) => {
+  const number = index + 1
+  return { key: `f${number}`, label: String(number) }
+})
 const displayDigits = computed(() => fnActive.value ? fnDigits : digitKeys.map((key) => ({ key, label: key })))
 const keyRows = [
   { className: 'qwerty', keys: 'qwertyuiop'.split('') },

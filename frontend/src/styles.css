@@ -128,8 +128,9 @@ h2 { margin: 0; font-size: 18px; }
 .key-bubble::after { content: ""; position: absolute; left: 50%; top: calc(100% - 1px); width: 14px; height: 14px; background: rgba(226, 232, 240, 0.96); transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
 @keyframes key-pop { 0% { opacity: 0; transform: translate(-50%, 8px) scale(0.88); } 45% { opacity: 1; transform: translate(-50%, 0) scale(1.04); } 100% { opacity: 1; transform: translate(-50%, -2px) scale(1); } }
 .key-row.digits { grid-template-columns: repeat(10, 1fr); }
-.key-row.fn-digits { grid-template-columns: repeat(9, 1fr); }
-.key-grid.fn-active .key-row.digits button { animation: fn-slide-in 150ms ease both; }
+.key-row.fn-digits { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 5px; }
+.key-row.fn-digits button { font-size: 13px; padding: 0 1px; }
+.key-grid.fn-active .key-row.digits button { animation: none; }
 @keyframes fn-slide-in { from { opacity: 0.45; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
 .key-row.qwerty { grid-template-columns: repeat(10, 1fr); }
 .key-row.home { grid-template-columns: repeat(9, 1fr); padding: 0 4.8%; }

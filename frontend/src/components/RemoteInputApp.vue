@@ -122,7 +122,7 @@ function openDirect() {
 
 function openFrame() {
   if (!previewEnabled.value) return
-  screenPreview.openScreenFrame(frameModalRef.value?.modalRef, frameModalRef.value?.viewportRef, frameModalRef.value?.stageRef)
+  screenPreview.openScreenFrame(frameModalRef.value?.modalRef)
 }
 
 function togglePowerExpanded() {
@@ -130,7 +130,7 @@ function togglePowerExpanded() {
 }
 
 function closeFrame() {
-  screenPreview.closeScreenFrame(frameModalRef.value?.viewportRef, frameModalRef.value?.stageRef)
+  screenPreview.closeScreenFrame()
 }
 
 watch(settings, () => saveSettings(settings), { deep: true })
@@ -201,7 +201,7 @@ onBeforeUnmount(() => {
 
     <SettingsModal v-model:show="settingsOpen" :settings="settings" @save-direct="saveDirect" @open-direct="openDirect" />
     <PowerActionModal v-model:show="powerModalOpen" :loading="powerLoading" :action-label="powerActionLabel" :schedule="power.schedule" @confirm="power.confirmPowerAction" />
-    <ScreenFrameModal ref="frameModalRef" :modal-open="frameModalOpen" :frame-url="frameUrl" :close-align-right="closeAlignRight" @close="closeFrame" @dblclick="screenPreview.toggleScreenFrameZoom" @touchend="screenPreview.handleFrameTouchEnd" />
+    <ScreenFrameModal ref="frameModalRef" :modal-open="frameModalOpen" :frame-url="frameUrl" :close-align-right="closeAlignRight" @close="closeFrame" />
   </main>
 </template>
 

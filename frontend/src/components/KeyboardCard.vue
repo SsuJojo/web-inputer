@@ -17,7 +17,7 @@ const keyRows = [
   { className: 'bottom', keys: 'zxcvbnm'.split('') },
 ]
 const labels = { space: '空格', enter: 'Enter', backspace: '⌫', esc: 'Esc', tab: 'Tab', fn: 'Fn', ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', win: 'Win', up: '↑', down: '↓', left: '←', right: '→' }
-const modifiers = ['ctrl', 'win', 'alt', 'shift']
+const modifiers = ['shift', 'ctrl', 'win', 'alt']
 const functionKeys = ['esc', 'tab', 'backspace', 'enter']
 
 function label(key) {
@@ -68,10 +68,10 @@ function toggleModifier(key) {
 <template>
   <n-card class="panel-card keyboard">
     <div class="row four">
-      <button v-for="key in modifiers" :key="key" class="toggle" :class="{ active: heldKeys.has(key) }" :aria-pressed="heldKeys.has(key)" :aria-label="`${label(key)} ${heldKeys.has(key) ? '已锁定' : '未锁定'}`" @click="toggleModifier(key)"><span class="lock-icon" aria-hidden="true">{{ heldKeys.has(key) ? '🔒' : '🔓' }}</span>{{ label(key) }}<span v-if="bubbles[key]" class="key-bubble">{{ label(key) }}</span></button>
+      <button v-for="key in functionKeys" :key="key" @click="tap(key)">{{ label(key) }}<span v-if="bubbles[key]" class="key-bubble">{{ label(key) }}</span></button>
     </div>
     <div class="row four">
-      <button v-for="key in functionKeys" :key="key" @click="tap(key)">{{ label(key) }}<span v-if="bubbles[key]" class="key-bubble">{{ label(key) }}</span></button>
+      <button v-for="key in modifiers" :key="key" class="toggle" :class="{ active: heldKeys.has(key) }" :aria-pressed="heldKeys.has(key)" :aria-label="`${label(key)} ${heldKeys.has(key) ? '已锁定' : '未锁定'}`" @click="toggleModifier(key)"><span class="lock-icon" aria-hidden="true">{{ heldKeys.has(key) ? '🔒' : '🔓' }}</span>{{ label(key) }}<span v-if="bubbles[key]" class="key-bubble">{{ label(key) }}</span></button>
     </div>
     <div class="arrows">
       <span></span><button @click="tap('up')">↑<span v-if="bubbles.up" class="key-bubble">↑</span></button><span></span>

@@ -5,11 +5,21 @@ import RemoteInputApp from './components/RemoteInputApp.vue'
 
 const prefersDark = ref(true)
 const themeColors = { light: '#f7f8fb', dark: '#0f172a' }
+const typography = {
+  fontFamily: 'var(--font-family-base)',
+  fontSize: 'var(--font-size-base)',
+  fontSizeMedium: 'var(--font-size-base)',
+  fontSizeLarge: 'var(--font-size-control)',
+  fontSizeHuge: 'var(--font-size-title)',
+  lineHeight: 'var(--line-height-base)',
+  fontWeightStrong: 'var(--font-weight-strong)',
+}
 let mediaQuery = null
 
 const theme = computed(() => prefersDark.value ? darkTheme : null)
 const themeOverrides = computed(() => ({
   common: prefersDark.value ? {
+    ...typography,
     primaryColor: '#38bdf8',
     primaryColorHover: '#7dd3fc',
     primaryColorPressed: '#0284c7',
@@ -18,6 +28,7 @@ const themeOverrides = computed(() => ({
     cardColor: 'rgba(15, 23, 42, 0.86)',
     modalColor: 'rgba(15, 23, 42, 0.98)',
   } : {
+    ...typography,
     primaryColor: '#2563eb',
     primaryColorHover: '#3b82f6',
     primaryColorPressed: '#1d4ed8',

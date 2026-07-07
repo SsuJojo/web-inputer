@@ -39,6 +39,30 @@ def test_index_falls_back_to_legacy_shell_when_build_missing(monkeypatch):
     assert 'window.PUBLIC_ORIGIN = "https://fallback.test"' in response.text
 
 
+def test_frontend_declares_typography_tokens_and_naive_overrides():
+    styles = Path("frontend/src/styles.css").read_text(encoding="utf-8")
+    app_vue = Path("frontend/src/App.vue").read_text(encoding="utf-8")
+
+    assert '--font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;' in styles
+    assert "--font-size-title: 24px;" in styles
+    assert "--font-size-control: 15px;" in styles
+    assert "--font-weight-strong: 800;" in styles
+    assert "font-family: var(--font-family-base);" in styles
+    assert "fontSize: 'var(--font-size-base)'" in app_vue
+    assert "fontSizeLarge: 'var(--font-size-control)'" in app_vue
+    assert "fontWeightStrong: 'var(--font-weight-strong)'" in app_vue
+
+
+def test_frontend_text_actions_use_typography_tokens():
+    styles = Path("frontend/src/styles.css").read_text(encoding="utf-8")
+    text_card = Path("frontend/src/components/TextInputCard.vue").read_text(encoding="utf-8")
+
+    assert '<div class="row two text-actions">' in text_card
+    assert ".text-actions .n-button" in styles
+    assert "font-size: var(--font-size-control);" in styles
+    assert "font-weight: var(--font-weight-strong);" in styles
+
+
 def test_pwa_shell_declares_ios_app_assets():
     index_html = (static_dir / "dist" / "index.html").read_text(encoding="utf-8")
     manifest = json.loads((static_dir / "manifest.webmanifest").read_text(encoding="utf-8"))

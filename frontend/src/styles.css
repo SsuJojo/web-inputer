@@ -113,8 +113,9 @@ h2 { margin: 0; font-size: var(--font-size-section); }
 .screen-card > .n-card-content { display: grid; gap: 10px; }
 .screen-controls { display: grid; grid-template-columns: 0.62fr 1fr 0.62fr; gap: 8px; }
 .screen-controls button { min-height: 46px; }
-.screen-toggle { width: 100%; display: grid; place-items: center; padding: 6px 8px; overflow: hidden; border: 0; border-radius: 16px; background: var(--control-muted); color: var(--control-muted-text); line-height: var(--line-height-tight); font-weight: var(--font-weight-strong); }
+.screen-toggle { width: 100%; display: grid; gap: 3px; place-items: center; padding: 6px 8px; overflow: hidden; border: 0; border-radius: 16px; background: var(--control-muted); color: var(--control-muted-text); line-height: var(--line-height-tight); font-weight: var(--font-weight-strong); }
 .screen-toggle-main { font-size: var(--font-size-base); }
+.screen-toggle-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-small); font-weight: var(--font-weight-medium); opacity: 0.78; }
 .screen-preview { position: relative; display: grid; place-items: center; max-height: 78vh; overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface-dark); color: var(--muted); touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; opacity: 1; transform: translateY(0); transition: max-height 220ms ease, opacity 180ms ease, transform 220ms ease, border-color 220ms ease; }
 .screen-stage { position: relative; width: 100%; display: none; aspect-ratio: 16 / 10; }
 .screen-preview.on .screen-stage { display: block; }

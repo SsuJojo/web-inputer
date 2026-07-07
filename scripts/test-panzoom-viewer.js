@@ -2,8 +2,13 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const indexHtml = fs.readFileSync(path.join(root, 'app/static/index.html'), 'utf8');
-const appJs = fs.readFileSync(path.join(root, 'app/static/app.js'), 'utf8');
+const frontendPackage = fs.readFileSync(path.join(root, 'frontend/package.json'), 'utf8');
+const frontendIndex = fs.readFileSync(path.join(root, 'frontend/index.html'), 'utf8');
+const distIndex = fs.readFileSync(path.join(root, 'app/static/dist/index.html'), 'utf8');
+const screenPreview = fs.readFileSync(path.join(root, 'frontend/src/composables/useScreenPreview.js'), 'utf8');
+const screenModal = fs.readFileSync(path.join(root, 'frontend/src/components/ScreenFrameModal.vue'), 'utf8');
+const remoteInputApp = fs.readFileSync(path.join(root, 'frontend/src/components/RemoteInputApp.vue'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'frontend/src/styles.css'), 'utf8');
 const swJs = fs.readFileSync(path.join(root, 'app/static/sw.js'), 'utf8');
 
 function assert(condition, message) {
@@ -13,15 +18,23 @@ function assert(condition, message) {
   }
 }
 
-const vendorIndex = indexHtml.indexOf('/static/vendor/panzoom.min.js');
-const appIndex = indexHtml.indexOf('/static/app.js');
-assert(vendorIndex !== -1, 'index.html references vendored Panzoom');
-assert(appIndex !== -1, 'index.html references app.js');
-assert(vendorIndex < appIndex, 'Panzoom loads before app.js');
-assert(swJs.includes('/static/vendor/panzoom.min.js'), 'service worker caches vendored Panzoom');
-assert(appJs.includes('initScreenFramePanzoom'), 'app.js defines Panzoom initialization');
-assert(appJs.includes('destroyScreenFramePanzoom'), 'app.js defines Panzoom cleanup');
-assert(appJs.includes('toggleScreenFrameZoom'), 'app.js defines double-click/tap zoom toggle');
-assert(!appJs.includes('framePinchDistance'), 'manual frame pinch state was removed');
+const packageJson = JSON.parse(frontendPackage);
+assert(packageJson.dependencies.photoswipe, 'frontend package declares PhotoSwipe dependency');
+assert(!frontendIndex.includes('/static/vendor/panzoom.min.js'), 'frontend shell no longer loads vendored Panzoom');
+assert(!distIndex.includes('/static/vendor/panzoom.min.js'), 'built frontend shell no longer loads vendored Panzoom');
+assert(!swJs.includes('/static/vendor/panzoom.min.js'), 'service worker no longer caches vendored Panzoom');
+assert(screenPreview.includes("from 'photoswipe'"), 'screen preview composable imports PhotoSwipe');
+assert(screenPreview.includes("import 'photoswipe/style.css'"), 'screen preview composable imports PhotoSwipe styles');
+assert(screenPreview.includes('openScreenFramePhotoSwipe'), 'screen preview composable defines PhotoSwipe open helper');
+assert(screenPreview.includes('destroyScreenFramePhotoSwipe'), 'screen preview composable defines PhotoSwipe cleanup helper');
+assert(!screenPreview.includes('initScreenFramePanzoom'), 'Panzoom initialization was removed');
+assert(!screenPreview.includes('toggleScreenFrameZoom'), 'custom double-click zoom toggle was removed');
+assert(!screenPreview.includes('handleFrameTouchEnd'), 'custom double-tap zoom handler was removed');
+assert(screenModal.includes('screen-frame-close'), 'screen modal keeps the custom close button');
+assert(!screenModal.includes('screen-frame-stage'), 'screen modal no longer renders custom Panzoom stage');
+assert(!remoteInputApp.includes('toggleScreenFrameZoom'), 'app no longer wires custom double-click zoom');
+assert(!remoteInputApp.includes('handleFrameTouchEnd'), 'app no longer wires custom double-tap zoom');
+assert(styles.includes('.pswp'), 'styles include PhotoSwipe layering overrides');
+assert(styles.includes('.screen-frame-close.align-right'), 'styles keep sliding close-button alignment');
 
-console.log('PASS: panzoom viewer static integration checks passed');
+console.log('PASS: PhotoSwipe viewer static integration checks passed');

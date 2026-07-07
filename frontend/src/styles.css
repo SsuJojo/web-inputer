@@ -129,7 +129,8 @@ h2 { margin: 0; font-size: 18px; }
 @keyframes key-pop { 0% { opacity: 0; transform: translate(-50%, 8px) scale(0.88); } 45% { opacity: 1; transform: translate(-50%, 0) scale(1.04); } 100% { opacity: 1; transform: translate(-50%, -2px) scale(1); } }
 .key-row.digits { grid-template-columns: repeat(10, 1fr); }
 .key-row.fn-digits { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 5px; }
-.key-row.fn-digits button { font-size: 13px; padding: 0 1px; }
+.key-row.fn-digits button { font-size: 13px; padding: 0 1px; animation: fn-fade-in 130ms ease-out both; }
+@keyframes fn-fade-in { from { opacity: 0.35; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
 .key-grid.fn-active .key-row.digits button { animation: none; }
 @keyframes fn-slide-in { from { opacity: 0.45; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
 .key-row.qwerty { grid-template-columns: repeat(10, 1fr); }

@@ -1,7 +1,6 @@
-const CACHE_NAME = 'remote-input-vue-20260706-01';
+const CACHE_NAME = 'remote-input-vue-20260707-photoswipe-01';
 const STATIC_ASSETS = [
   '/manifest.webmanifest',
-  '/static/vendor/panzoom.min.js',
 ];
 
 self.addEventListener('install', (event) => {

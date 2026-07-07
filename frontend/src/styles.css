@@ -174,6 +174,7 @@ h2 { margin: 0; font-size: 18px; }
 .screen-frame-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
 .screen-frame-close.align-right { left: calc(100% - 36px - max(8px, env(safe-area-inset-right))); }
 .pswp { --pswp-bg: #020617; z-index: 1500; }
+.screen-frame-modal .pswp { pointer-events: auto; }
 .pswp__button--close, .pswp__counter { display: none; }
 
 @media (max-width: 420px) {

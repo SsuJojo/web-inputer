@@ -20,13 +20,16 @@ function assert(condition, message) {
 
 const packageJson = JSON.parse(frontendPackage);
 assert(packageJson.dependencies.photoswipe, 'frontend package declares PhotoSwipe dependency');
+assert(!fs.existsSync(path.join(root, 'app/static/vendor/panzoom.min.js')), 'vendored Panzoom file was removed');
 assert(!frontendIndex.includes('/static/vendor/panzoom.min.js'), 'frontend shell no longer loads vendored Panzoom');
 assert(!distIndex.includes('/static/vendor/panzoom.min.js'), 'built frontend shell no longer loads vendored Panzoom');
 assert(!swJs.includes('/static/vendor/panzoom.min.js'), 'service worker no longer caches vendored Panzoom');
 assert(screenPreview.includes("from 'photoswipe'"), 'screen preview composable imports PhotoSwipe');
 assert(screenPreview.includes("import 'photoswipe/style.css'"), 'screen preview composable imports PhotoSwipe styles');
-assert(screenPreview.includes('openScreenFramePhotoSwipe'), 'screen preview composable defines PhotoSwipe open helper');
-assert(screenPreview.includes('destroyScreenFramePhotoSwipe'), 'screen preview composable defines PhotoSwipe cleanup helper');
+assert(screenPreview.includes('naturalWidth'), 'PhotoSwipe uses the loaded image natural width for slide metadata');
+assert(screenPreview.includes('naturalHeight'), 'PhotoSwipe uses the loaded image natural height for slide metadata');
+assert(!screenPreview.includes('instance.isDestroying = true'), 'PhotoSwipe opening cleanup does not pre-mark the instance as destroying');
+assert(screenPreview.includes('opener.isOpening = false'), 'PhotoSwipe opening cleanup clears opening state before destroy');
 assert(!screenPreview.includes('initScreenFramePanzoom'), 'Panzoom initialization was removed');
 assert(!screenPreview.includes('toggleScreenFrameZoom'), 'custom double-click zoom toggle was removed');
 assert(!screenPreview.includes('handleFrameTouchEnd'), 'custom double-tap zoom handler was removed');

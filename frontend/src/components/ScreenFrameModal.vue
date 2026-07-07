@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 
-defineProps({ modalOpen: Boolean, frameUrl: String, closeAlignRight: Boolean })
+defineProps({ modalOpen: Boolean, closeAlignRight: Boolean })
 defineEmits(['close'])
 const modalRef = ref(null)
 defineExpose({ modalRef })

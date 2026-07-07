@@ -1,5 +1,5 @@
 tunnel: aiapi
-credentials-file: C:\\Users\\SsuJo_\\.cloudflared\\aiapi.json
+credentials-file: C:\\Users\\<YOU>\\.cloudflared\\aiapi.json
 
 originRequest:
   connectTimeout: 10s

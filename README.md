@@ -60,11 +60,23 @@ pnpm --dir frontend install
 pnpm --dir frontend build
 ```
 
+生产构建产物会输出到 `app/static/dist/`，并由 FastAPI 直接托管。`app/static/dist/assets/*.js` 和 `*.css` 在 Git 中固定为 LF 换行，避免 Windows 重复构建后出现仅换行导致的脏状态。
+
 开发时先启动后端，再启动 Vite：
 
 ```powershell
 .\.venv\Scripts\python.exe -X utf8 -m uvicorn app.main:app --host 127.0.0.1 --port 8790 --reload --proxy-headers --forwarded-allow-ips='*'
 pnpm --dir frontend dev
+```
+
+## 发布
+
+推送到 `main` 会触发 `.github/workflows/build.yml` 构建 Windows EXE artifact。创建并推送 `v*` 标签会额外创建 GitHub Release，并上传 `remote-input.exe`。
+
+```powershell
+git push origin main
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 ## Windows 本地启动
@@ -111,7 +123,7 @@ Invoke-WebRequest http://127.0.0.1:8790/health
 
 ```yaml
 tunnel: aiapi
-credentials-file: C:\Users\SsuJo_\.cloudflared\aiapi.json
+credentials-file: C:\\Users\\<YOU>\\.cloudflared\\aiapi.json
 
 originRequest:
   connectTimeout: 10s

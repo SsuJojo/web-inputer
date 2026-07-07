@@ -1,0 +1,2 @@
+app/static/dist/assets/*.js text eol=lf
+app/static/dist/assets/*.css text eol=lf

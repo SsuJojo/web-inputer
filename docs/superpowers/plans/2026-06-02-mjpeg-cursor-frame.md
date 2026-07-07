@@ -410,7 +410,7 @@ Run:
 ```powershell
 $listener = Get-NetTCPConnection -LocalPort 8790 -State Listen -ErrorAction Stop | Select-Object -First 1
 Stop-Process -Id $listener.OwningProcess -Force
-Start-Process -FilePath "C:\Users\SsuJo_\Documents\GitHub\web-inputer\.venv\Scripts\python.exe" -ArgumentList "run.py" -WorkingDirectory "C:\Users\SsuJo_\Documents\GitHub\web-inputer" -WindowStyle Hidden
+Start-Process -FilePath ".\.venv\Scripts\python.exe" -ArgumentList "run.py" -WorkingDirectory "." -WindowStyle Hidden
 ```
 
 - [ ] **Step 4: Verify health after restart**

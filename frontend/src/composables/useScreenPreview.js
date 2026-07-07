@@ -1,4 +1,6 @@
 import { computed, nextTick, ref } from 'vue'
+import PhotoSwipe from 'photoswipe'
+import 'photoswipe/style.css'
 
 const CURSOR_POLL_WEB_MS = 200
 const CURSOR_POLL_PHYSICAL_MS = 80
@@ -12,10 +14,9 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
   let cursorTimer = 0
   let cursorRequestId = 0
   let cursorRequestInFlight = false
-  let screenFramePanzoom = null
-  let screenFrameWheelHandler = null
-  let screenFrameZoomed = false
-  let screenFrameLastTapAt = 0
+  let screenFramePhotoSwipe = null
+  let screenFrameClosingFromPhotoSwipe = false
+  let screenFrameOpenFrameRequest = 0
   let orientationActive = false
   let lastTiltScrollAt = 0
   let windowStateTimer = 0
@@ -130,39 +131,56 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     sendWindowControl('switch', { direction })
   }
 
-  function getPanzoomFactory() {
-    return typeof window.Panzoom === 'function' ? window.Panzoom : null
+  function cancelScreenFrameOpenRequest() {
+    if (!screenFrameOpenFrameRequest) return
+    window.cancelAnimationFrame(screenFrameOpenFrameRequest)
+    screenFrameOpenFrameRequest = 0
   }
 
-  function destroyScreenFramePanzoom(viewportEl, stageEl) {
-    if (screenFrameWheelHandler && viewportEl) viewportEl.removeEventListener('wheel', screenFrameWheelHandler)
-    screenFrameWheelHandler = null
-    if (screenFramePanzoom?.destroy) screenFramePanzoom.destroy()
-    else if (screenFramePanzoom?.dispose) screenFramePanzoom.dispose()
-    screenFramePanzoom = null
-    screenFrameZoomed = false
-    if (stageEl) stageEl.style.transform = ''
+  function destroyScreenFramePhotoSwipe() {
+    cancelScreenFrameOpenRequest()
+    if (!screenFramePhotoSwipe) return
+    const instance = screenFramePhotoSwipe
+    screenFramePhotoSwipe = null
+    if (!instance.isDestroying) instance.destroy()
   }
 
-  function initScreenFramePanzoom(viewportEl, stageEl) {
-    destroyScreenFramePanzoom(viewportEl, stageEl)
-    const Panzoom = getPanzoomFactory()
-    if (!Panzoom || !stageEl || !viewportEl) return
-    screenFramePanzoom = Panzoom(stageEl, { maxScale: 4, minScale: 1, contain: 'outside', canvas: true })
-    screenFrameWheelHandler = (event) => screenFramePanzoom?.zoomWithWheel(event)
-    viewportEl.addEventListener('wheel', screenFrameWheelHandler, { passive: false })
+  function syncScreenFrameClosedFromPhotoSwipe() {
+    screenFrameClosingFromPhotoSwipe = true
+    frameModalOpen.value = false
+    stopScreenFrameOrientation()
+    exitFullscreen()
+    stopCursorPollingIfIdle()
+    screenFramePhotoSwipe = null
+    window.setTimeout(() => {
+      screenFrameClosingFromPhotoSwipe = false
+    }, 0)
   }
 
-  function zoomScreenFrameToPoint(event, nextScale) {
-    if (screenFramePanzoom?.zoomToPoint) screenFramePanzoom.zoomToPoint(nextScale, event, { animate: true })
-    else screenFramePanzoom?.zoom(nextScale, { animate: true })
-  }
-
-  function toggleScreenFrameZoom(event) {
-    if (!screenFramePanzoom) return
-    const nextScale = screenFrameZoomed ? 1 : 2
-    zoomScreenFrameToPoint(event, nextScale)
-    screenFrameZoomed = nextScale > 1
+  function openScreenFramePhotoSwipe(src) {
+    destroyScreenFramePhotoSwipe()
+    try {
+      screenFramePhotoSwipe = new PhotoSwipe({
+        dataSource: [{ src, width: 1920, height: 1080, alt: '屏幕截图预览' }],
+        index: 0,
+        bgOpacity: 1,
+        showHideAnimationType: 'fade',
+        wheelToZoom: true,
+        zoom: false,
+        close: false,
+        counter: false,
+        arrowKeys: false,
+        clickToCloseNonZoomable: false,
+        paddingFn: () => ({ top: 6, bottom: 6, left: 6, right: 6 }),
+      })
+      screenFramePhotoSwipe.on('destroy', syncScreenFrameClosedFromPhotoSwipe)
+      screenFramePhotoSwipe.init()
+    } catch (error) {
+      console.debug('[screen-frame:photoswipe]', error)
+      frameModalOpen.value = false
+      stopScreenFrameOrientation()
+      exitFullscreen()
+    }
   }
 
   function refreshScreenFrame() {
@@ -228,37 +246,28 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     }
   }
 
-  async function openScreenFrame(modalEl, viewportEl, stageEl) {
+  async function openScreenFrame(modalEl) {
     moveScreenFrameCloseTo('left')
+    refreshScreenFrame()
     frameModalOpen.value = true
     await nextTick()
     requestFullscreen(modalEl)
     requestScreenFrameOrientation()
-    window.requestAnimationFrame(() => {
-      refreshScreenFrame()
-      initScreenFramePanzoom(viewportEl, stageEl)
+    cancelScreenFrameOpenRequest()
+    screenFrameOpenFrameRequest = window.requestAnimationFrame(() => {
+      screenFrameOpenFrameRequest = 0
+      if (!frameModalOpen.value) return
+      openScreenFramePhotoSwipe(frameUrl.value)
     })
   }
 
-  function closeScreenFrame(viewportEl, stageEl) {
-    destroyScreenFramePanzoom(viewportEl, stageEl)
+  function closeScreenFrame() {
+    if (!screenFrameClosingFromPhotoSwipe) destroyScreenFramePhotoSwipe()
     frameModalOpen.value = false
     stopScreenFrameOrientation()
     exitFullscreen()
     stopCursorPollingIfIdle()
   }
 
-  function handleFrameTouchEnd(event) {
-    if (event.changedTouches.length !== 1) return
-    const now = Date.now()
-    if (now - screenFrameLastTapAt < 320) {
-      event.preventDefault()
-      toggleScreenFrameZoom(event.changedTouches[0])
-      screenFrameLastTapAt = 0
-      return
-    }
-    screenFrameLastTapAt = now
-  }
-
-  return { enabled, streamUrl, frameModalOpen, frameUrl, closeAlignRight, formattedWindowTitle, setScreenPreview, toggleScreenPreview, switchDesktop, createDesktop, switchWindow, updateCursor, openScreenFrame, closeScreenFrame, toggleScreenFrameZoom, handleFrameTouchEnd, refreshScreenFrame }
+  return { enabled, streamUrl, frameModalOpen, frameUrl, closeAlignRight, formattedWindowTitle, setScreenPreview, toggleScreenPreview, switchDesktop, createDesktop, switchWindow, updateCursor, openScreenFrame, closeScreenFrame, refreshScreenFrame }
 }

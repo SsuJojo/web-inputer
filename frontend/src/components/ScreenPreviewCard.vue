@@ -5,6 +5,7 @@ const props = defineProps({ enabled: Boolean, streamUrl: String, title: String, 
 const emit = defineEmits(['toggle', 'desktop', 'create-desktop', 'open-frame', 'image-load'])
 const stageRef = ref(null)
 const imageRef = ref(null)
+const stageAspect = ref('16 / 10')
 const ariaPressed = computed(() => String(props.enabled))
 let desktopPressTimer = 0
 let desktopLongPressed = false
@@ -22,6 +23,16 @@ function startDesktopPress() {
 
 function endDesktopPress() {
   window.clearTimeout(desktopPressTimer)
+}
+
+function handleImageLoad(event) {
+  const img = event.target
+  const width = img.naturalWidth
+  const height = img.naturalHeight
+  if (width > 0 && height > 0) {
+    stageAspect.value = height >= width ? '16 / 10' : `${width} / ${height}`
+  }
+  emit('image-load')
 }
 
 function clickRightDesktop() {
@@ -46,8 +57,8 @@ onBeforeUnmount(() => window.clearTimeout(desktopPressTimer))
       <n-button secondary aria-label="短按切换到右侧桌面，长按新建桌面" @pointerdown="startDesktopPress" @pointerup="endDesktopPress" @pointercancel="endDesktopPress" @pointerleave="endDesktopPress" @click="clickRightDesktop">桌面 →</n-button>
     </div>
     <div class="screen-preview" :class="enabled ? 'on' : 'off'" role="button" aria-label="预览当前屏幕截图" @click="$emit('open-frame')">
-      <div ref="stageRef" class="screen-stage">
-        <img v-if="streamUrl" ref="imageRef" class="screen-image" :src="streamUrl" alt="电脑屏幕预览" @load="$emit('image-load')">
+      <div ref="stageRef" class="screen-stage" :style="{ aspectRatio: stageAspect }">
+        <img v-if="streamUrl" ref="imageRef" class="screen-image" :src="streamUrl" alt="电脑屏幕预览" @load="handleImageLoad">
         <div class="cursor-layer">
           <div class="screen-cursor" :class="{ visible: cursorStyle }" :style="cursorStyle || {}"></div>
         </div>

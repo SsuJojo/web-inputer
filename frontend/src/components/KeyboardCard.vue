@@ -14,7 +14,7 @@ const displayDigits = computed(() => fnActive.value ? fnDigits : digitKeys.map((
 const keyRows = [
   { className: 'qwerty', keys: 'qwertyuiop'.split('') },
   { className: 'home', keys: 'asdfghjkl'.split('') },
-  { className: 'bottom', keys: 'zxcvbnm'.split('') },
+  { className: 'bottom', keys: 'zxcvbnm'.split('').concat('backspace') },
 ]
 const labels = { space: '空格', enter: 'Enter', backspace: '⌫', esc: 'Esc', tab: 'Tab', fn: 'Fn', ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', win: 'Win', up: '↑', down: '↓', left: '←', right: '→' }
 const modifiers = ['shift', 'ctrl', 'win', 'alt']

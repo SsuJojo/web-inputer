@@ -192,7 +192,7 @@ h2 { margin: 0; font-size: var(--font-size-section); }
 .screen-frame-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
 .screen-frame-close.align-right { left: calc(100% - 36px - max(8px, env(safe-area-inset-right))); }
 .screen-frame-placeholder { position: fixed; inset: 0; z-index: 1400; width: 100vw; height: 100dvh; object-fit: contain; background: #020617; pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
-.pswp { --pswp-bg: #020617; z-index: 1500; }
+.pswp { --pswp-bg: #020617; --pswp-placeholder-bg: transparent; z-index: 1500; }
 .screen-frame-modal .pswp { pointer-events: auto; }
 .pswp__button--close, .pswp__counter { display: none; }
 .pswp__preloader { display: none; }

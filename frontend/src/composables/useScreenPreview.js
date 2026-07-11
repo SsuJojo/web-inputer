@@ -192,6 +192,7 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
         console.debug('[screen-frame:photoswipe-load-error]')
         closeScreenFrame()
       })
+      instance.addFilter('useContentPlaceholder', () => false)
       instance.init()
     } catch (error) {
       console.debug('[screen-frame:photoswipe]', error)

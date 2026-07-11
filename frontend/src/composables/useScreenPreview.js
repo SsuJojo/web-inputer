@@ -23,6 +23,9 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
   let orientationActive = false
   let lastTiltScrollAt = 0
   let windowStateTimer = 0
+  let streamAbortController = null
+  let streamGeneration = 0
+  let streamBlobUrl = ''
 
   const formattedWindowTitle = computed(() => {
     const clean = String(currentWindowTitle?.value || '').trim()
@@ -89,15 +92,95 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     windowStateTimer = 0
   }
 
+  function findJpegMarker(buf, marker, from) {
+    const hi = (marker >> 8) & 0xff
+    const lo = marker & 0xff
+    for (let i = from; i < buf.length - 1; i += 1) {
+      if (buf[i] === hi && buf[i + 1] === lo) return i
+    }
+    return -1
+  }
+
+  function pushStreamFrame(frameBytes, gen) {
+    if (gen !== streamGeneration) return
+    const url = URL.createObjectURL(new Blob([frameBytes], { type: 'image/jpeg' }))
+    const prev = streamBlobUrl
+    streamBlobUrl = url
+    streamUrl.value = url
+    if (prev) URL.revokeObjectURL(prev)
+  }
+
+  async function pumpMjpegStream(response, gen) {
+    const reader = response.body.getReader()
+    let buffer = new Uint8Array(0)
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done || gen !== streamGeneration) break
+        const next = new Uint8Array(buffer.length + value.length)
+        next.set(buffer)
+        next.set(value, buffer.length)
+        buffer = next
+        while (true) {
+          const soi = findJpegMarker(buffer, 0xffd8, 0)
+          if (soi === -1) {
+            buffer = buffer.length > 0 ? buffer.slice(buffer.length - 1) : buffer
+            break
+          }
+          const eoi = findJpegMarker(buffer, 0xffd9, soi + 2)
+          if (eoi === -1) {
+            buffer = buffer.slice(soi)
+            break
+          }
+          pushStreamFrame(buffer.subarray(soi, eoi + 2), gen)
+          buffer = buffer.slice(eoi + 2)
+        }
+      }
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        queueClientLog?.('screen-stream-error', { message: String(error) })
+      }
+    }
+  }
+
+  function startStream() {
+    stopStream()
+    const gen = ++streamGeneration
+    const controller = new AbortController()
+    streamAbortController = controller
+    fetch(`/api/screen/stream?ts=${Date.now()}`, { credentials: 'include', signal: controller.signal })
+      .then((response) => {
+        if (!response.ok || !response.body || gen !== streamGeneration) return
+        return pumpMjpegStream(response, gen)
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') {
+          queueClientLog?.('screen-stream-error', { message: String(error) })
+        }
+      })
+  }
+
+  function stopStream() {
+    streamGeneration += 1
+    const controller = streamAbortController
+    streamAbortController = null
+    if (controller) controller.abort()
+    if (streamBlobUrl) {
+      URL.revokeObjectURL(streamBlobUrl)
+      streamBlobUrl = ''
+    }
+    streamUrl.value = ''
+  }
+
   function setScreenPreview(nextEnabled) {
     enabled.value = nextEnabled
     if (nextEnabled) {
-      streamUrl.value = `/api/screen/stream?ts=${Date.now()}`
+      startStream()
       startCursorPolling()
       startWindowStatePolling()
     } else {
       if (frameModalOpen.value || screenFramePhotoSwipe || screenFrameOpenFrameRequest) closeScreenFrame()
-      streamUrl.value = ''
+      stopStream()
       stopWindowStatePolling()
       stopCursorPollingIfIdle()
     }

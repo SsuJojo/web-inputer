@@ -115,7 +115,10 @@ h2 { margin: 0; font-size: var(--font-size-section); }
 .screen-controls button { min-height: 46px; }
 .screen-toggle { width: 100%; display: grid; gap: 3px; place-items: center; padding: 6px 8px; overflow: hidden; border: 0; border-radius: 16px; background: var(--control-muted); color: var(--control-muted-text); line-height: var(--line-height-tight); font-weight: var(--font-weight-strong); }
 .screen-toggle-main { font-size: var(--font-size-base); }
-.screen-toggle-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-small); font-weight: var(--font-weight-medium); opacity: 0.78; }
+.screen-toggle-title-wrap { max-width: 100%; overflow: hidden; white-space: nowrap; }
+.screen-toggle-title { display: inline-block; font-size: 11px; font-weight: 400; opacity: 0.78; }
+.screen-toggle-title.scrolling { animation: title-scroll 5s ease-in-out infinite; }
+@keyframes title-scroll { 0%, 18% { transform: translateX(0); } 82%, 100% { transform: translateX(var(--title-scroll-x, 0)); } }
 .screen-preview { position: relative; display: grid; place-items: center; max-height: 78vh; overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface-dark); color: var(--muted); touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; opacity: 1; transform: translateY(0); transition: max-height 220ms ease, opacity 180ms ease, transform 220ms ease, border-color 220ms ease; }
 .screen-stage { position: relative; width: 100%; display: none; }
 .screen-preview.on .screen-stage { display: block; }

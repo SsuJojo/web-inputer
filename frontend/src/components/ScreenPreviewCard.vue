@@ -1,14 +1,16 @@
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({ enabled: Boolean, streamUrl: String, title: String, cursorStyle: Object })
 const emit = defineEmits(['toggle', 'desktop', 'create-desktop', 'open-frame', 'image-load'])
 const stageRef = ref(null)
 const imageRef = ref(null)
+const titleRef = ref(null)
 const stageAspect = ref('16 / 10')
 const ariaPressed = computed(() => String(props.enabled))
 let desktopPressTimer = 0
 let desktopLongPressed = false
+let titleResizeObserver = null
 
 defineExpose({ stageRef, imageRef })
 
@@ -43,7 +45,33 @@ function clickRightDesktop() {
   emit('desktop', 'right')
 }
 
-onBeforeUnmount(() => window.clearTimeout(desktopPressTimer))
+function updateTitleScroll() {
+  const el = titleRef.value
+  if (!el) return
+  const wrap = el.parentElement
+  const overflow = Math.max(0, el.scrollWidth - (wrap?.clientWidth || 0))
+  el.style.setProperty('--title-scroll-x', `${-overflow}px`)
+  el.classList.toggle('scrolling', overflow > 0)
+}
+
+watch(() => props.title, async () => {
+  await nextTick()
+  updateTitleScroll()
+})
+
+onMounted(() => {
+  updateTitleScroll()
+  if (titleRef.value?.parentElement && 'ResizeObserver' in window) {
+    titleResizeObserver = new ResizeObserver(() => updateTitleScroll())
+    titleResizeObserver.observe(titleRef.value.parentElement)
+  }
+})
+
+onBeforeUnmount(() => {
+  window.clearTimeout(desktopPressTimer)
+  titleResizeObserver?.disconnect()
+  titleResizeObserver = null
+})
 </script>
 
 <template>
@@ -52,7 +80,7 @@ onBeforeUnmount(() => window.clearTimeout(desktopPressTimer))
       <n-button secondary @click="$emit('desktop', 'left')">← 桌面</n-button>
       <button class="screen-toggle" type="button" :aria-label="enabled ? '关闭屏幕预览' : '开启屏幕预览'" :aria-pressed="ariaPressed" @click="$emit('toggle')">
         <span class="screen-toggle-main">{{ enabled ? '关闭预览' : '开启预览' }}</span>
-        <span class="screen-toggle-title">{{ title }}</span>
+        <span class="screen-toggle-title-wrap"><span ref="titleRef" class="screen-toggle-title">{{ title }}</span></span>
       </button>
       <n-button secondary aria-label="短按切换到右侧桌面，长按新建桌面" @pointerdown="startDesktopPress" @pointerup="endDesktopPress" @pointercancel="endDesktopPress" @pointerleave="endDesktopPress" @click="clickRightDesktop">桌面 →</n-button>
     </div>

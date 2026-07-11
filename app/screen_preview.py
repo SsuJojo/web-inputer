@@ -47,7 +47,7 @@ class ScreenPreviewer:
             image = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
         return image, monitor
 
-    def capture_frame(self, max_width: int | None = None, quality: int | None = None) -> bytes:
+    def capture_frame(self, max_width: int | None = None, quality: int | None = None, progressive: bool = True) -> bytes:
         from PIL import Image
 
         image, monitor = self._capture_monitor_image()
@@ -59,7 +59,7 @@ class ScreenPreviewer:
             image = image.resize((max_width, height), Image.Resampling.BILINEAR)
 
         buffer = io.BytesIO()
-        image.save(buffer, format="JPEG", quality=quality, optimize=True, progressive=True, subsampling=0)
+        image.save(buffer, format="JPEG", quality=quality, optimize=True, progressive=progressive, subsampling=0)
         return buffer.getvalue()
 
     def draw_fallback_cursor(self, image, x: int, y: int):

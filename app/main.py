@@ -202,7 +202,7 @@ async def screen_cursor(request: Request) -> dict[str, int | str]:
 @app.get("/api/screen/frame")
 async def screen_frame(request: Request) -> Response:
     require_screen_preview(request)
-    frame = await __import__("asyncio").to_thread(screen_previewer.capture_frame, 1920, 82)
+    frame = await __import__("asyncio").to_thread(screen_previewer.capture_frame, 1920, 82, False)
     return Response(frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 

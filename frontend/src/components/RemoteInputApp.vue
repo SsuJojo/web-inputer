@@ -47,7 +47,7 @@ const touchpad = useTouchpad({ sendInput: socket.sendInput, queueMouseMove: curs
 const power = usePowerControl(message)
 const { checking, loginError } = session
 const { statusText, statusKind, latencyText } = socket
-const { enabled: previewEnabled, streamUrl, formattedWindowTitle, frameModalOpen, closeAlignRight } = screenPreview
+const { enabled: previewEnabled, streamUrl, formattedWindowTitle, frameModalOpen, closeAlignRight, placeholderSrc } = screenPreview
 const { collapsed: touchpadCollapsed } = touchpad
 const { expanded: powerExpanded, loading: powerLoading, status: powerStatus, modalOpen: powerModalOpen, actionLabel: powerActionLabel } = power
 const controlReady = computed(() => session.authenticated.value)
@@ -120,9 +120,28 @@ function openDirect() {
   window.location.href = `http://${settings.directHost}:${settings.directPort || '8790'}/`
 }
 
+function capturePreviewSnapshot() {
+  const img = screenPreviewRef.value?.imageRef
+  if (!img || !img.naturalWidth) return { src: '', width: 0, height: 0 }
+  let src = ''
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.drawImage(img, 0, 0)
+      src = canvas.toDataURL('image/jpeg', 0.7)
+    }
+  } catch (error) {
+    src = ''
+  }
+  return { src, width: img.naturalWidth, height: img.naturalHeight }
+}
+
 function openFrame() {
   if (!previewEnabled.value) return
-  screenPreview.openScreenFrame(frameModalRef.value?.modalRef)
+  screenPreview.openScreenFrame(frameModalRef.value?.modalRef, capturePreviewSnapshot())
 }
 
 function togglePowerExpanded() {
@@ -201,7 +220,7 @@ onBeforeUnmount(() => {
 
     <SettingsModal v-model:show="settingsOpen" :settings="settings" @save-direct="saveDirect" @open-direct="openDirect" />
     <PowerActionModal v-model:show="powerModalOpen" :loading="powerLoading" :action-label="powerActionLabel" :schedule="power.schedule" @confirm="power.confirmPowerAction" />
-    <ScreenFrameModal ref="frameModalRef" :modal-open="frameModalOpen" :close-align-right="closeAlignRight" @close="closeFrame" />
+    <ScreenFrameModal ref="frameModalRef" :modal-open="frameModalOpen" :close-align-right="closeAlignRight" :placeholder-src="placeholderSrc" @close="closeFrame" />
   </main>
 </template>
 

@@ -31,7 +31,7 @@ class ScreenPreviewer:
         while True:
             try:
                 frame = await asyncio.to_thread(self.capture_frame, self.settings.screen_preview_max_width, self.settings.screen_preview_quality)
-                yield b"--frame\r\nContent-Type: image/jpeg\r\nCache-Control: no-store\r\n\r\n" + frame + b"\r\n"
+                yield frame
             except Exception:
                 logger.exception("screen preview capture failed")
                 await asyncio.sleep(1)

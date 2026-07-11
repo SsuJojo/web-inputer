@@ -217,7 +217,7 @@ async def screen_stream(request: Request) -> StreamingResponse:
     require_screen_preview(request)
     return StreamingResponse(
         screen_previewer.frames(),
-        media_type="multipart/x-mixed-replace; boundary=frame",
+        media_type="application/octet-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 

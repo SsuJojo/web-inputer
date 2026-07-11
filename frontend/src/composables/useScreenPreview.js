@@ -4,6 +4,7 @@ import 'photoswipe/style.css'
 
 const CURSOR_POLL_WEB_MS = 200
 const CURSOR_POLL_PHYSICAL_MS = 80
+const STREAM_RECONNECT_MS = 800
 
 // Remembered zoom/pan for the screen frame preview, restored on the next open.
 let savedScreenFrameView = null
@@ -29,6 +30,7 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
   let streamAbortController = null
   let streamGeneration = 0
   let streamBlobUrl = ''
+  let streamReconnectTimer = 0
 
   const formattedWindowTitle = computed(() => {
     const clean = String(currentWindowTitle?.value || '').trim()
@@ -148,6 +150,10 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
 
   function startStream() {
     stopStream()
+    fetchStream()
+  }
+
+  function fetchStream() {
     const gen = ++streamGeneration
     const controller = new AbortController()
     streamAbortController = controller
@@ -161,6 +167,19 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
           queueClientLog?.('screen-stream-error', { message: String(error) })
         }
       })
+      .finally(() => {
+        // Mobile networks / tunnelled connections drop the MJPEG fetch
+        // periodically. The old <img src> consumption reconnected
+        // automatically; fetch does not, so without this the live picture
+        // freezes the first time the connection blips. Reconnect (without
+        // clearing the last frame) while the preview stays enabled.
+        if (gen !== streamGeneration || !enabled.value) return
+        streamReconnectTimer = window.setTimeout(() => {
+          streamReconnectTimer = 0
+          if (gen !== streamGeneration || !enabled.value) return
+          fetchStream()
+        }, STREAM_RECONNECT_MS)
+      })
   }
 
   function stopStream() {
@@ -168,6 +187,10 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     const controller = streamAbortController
     streamAbortController = null
     if (controller) controller.abort()
+    if (streamReconnectTimer) {
+      clearTimeout(streamReconnectTimer)
+      streamReconnectTimer = 0
+    }
     if (streamBlobUrl) {
       URL.revokeObjectURL(streamBlobUrl)
       streamBlobUrl = ''

@@ -11,7 +11,7 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
   const frameModalOpen = ref(false)
   const frameUrl = ref('')
   const closeAlignRight = ref(false)
-  const placeholderSrc = ref('')
+  let framePlaceholderSrc = ''
   let frameImageWidth = 0
   let frameImageHeight = 0
   let cursorTimer = 0
@@ -157,7 +157,6 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     if (screenFramePhotoSwipe && screenFramePhotoSwipe !== instance) return
     screenFrameClosingFromPhotoSwipe = true
     frameModalOpen.value = false
-    placeholderSrc.value = ''
     stopScreenFrameOrientation()
     exitFullscreen()
     stopCursorPollingIfIdle()
@@ -167,17 +166,19 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     }, 0)
   }
 
-  async function openScreenFramePhotoSwipe(src, modalEl) {
+  async function openScreenFramePhotoSwipe(src, modalEl, msrc) {
     destroyScreenFramePhotoSwipe()
     if (!frameModalOpen.value) return
     const width = frameImageWidth || 1920
     const height = frameImageHeight || 1080
     try {
+      const data = { src, width, height, alt: '屏幕截图预览' }
+      if (msrc) data.msrc = msrc
       screenFramePhotoSwipe = new PhotoSwipe({
-        dataSource: [{ src, width, height, alt: '屏幕截图预览' }],
+        dataSource: [data],
         index: 0,
         appendToEl: modalEl || document.body,
-        bgOpacity: placeholderSrc.value ? 0 : 1,
+        bgOpacity: 1,
         showHideAnimationType: 'fade',
         wheelToZoom: true,
         zoom: false,
@@ -192,12 +193,10 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
         console.debug('[screen-frame:photoswipe-load-error]')
         closeScreenFrame()
       })
-      instance.addFilter('useContentPlaceholder', () => false)
       instance.init()
     } catch (error) {
       console.debug('[screen-frame:photoswipe]', error)
       frameModalOpen.value = false
-      placeholderSrc.value = ''
       stopScreenFrameOrientation()
       exitFullscreen()
     }
@@ -269,7 +268,7 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
   async function openScreenFrame(modalEl, snapshot = {}) {
     moveScreenFrameCloseTo('left')
     refreshScreenFrame()
-    placeholderSrc.value = snapshot.src || ''
+    framePlaceholderSrc = snapshot.src || ''
     frameImageWidth = snapshot.width || 0
     frameImageHeight = snapshot.height || 0
     frameModalOpen.value = true
@@ -280,7 +279,7 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     screenFrameOpenFrameRequest = window.requestAnimationFrame(() => {
       screenFrameOpenFrameRequest = 0
       if (!frameModalOpen.value) return
-      openScreenFramePhotoSwipe(frameUrl.value, modalEl).catch((error) => {
+      openScreenFramePhotoSwipe(frameUrl.value, modalEl, framePlaceholderSrc).catch((error) => {
         console.debug('[screen-frame:photoswipe-load]', error)
         closeScreenFrame()
       })
@@ -290,11 +289,10 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
   function closeScreenFrame() {
     if (!screenFrameClosingFromPhotoSwipe) destroyScreenFramePhotoSwipe()
     frameModalOpen.value = false
-    placeholderSrc.value = ''
     stopScreenFrameOrientation()
     exitFullscreen()
     stopCursorPollingIfIdle()
   }
 
-  return { enabled, streamUrl, frameModalOpen, frameUrl, closeAlignRight, placeholderSrc, formattedWindowTitle, setScreenPreview, toggleScreenPreview, switchDesktop, createDesktop, switchWindow, updateCursor, openScreenFrame, closeScreenFrame, refreshScreenFrame }
+  return { enabled, streamUrl, frameModalOpen, frameUrl, closeAlignRight, formattedWindowTitle, setScreenPreview, toggleScreenPreview, switchDesktop, createDesktop, switchWindow, updateCursor, openScreenFrame, closeScreenFrame, refreshScreenFrame }
 }

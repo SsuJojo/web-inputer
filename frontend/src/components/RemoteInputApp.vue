@@ -47,7 +47,7 @@ const touchpad = useTouchpad({ sendInput: socket.sendInput, queueMouseMove: curs
 const power = usePowerControl(message)
 const { checking, loginError } = session
 const { statusText, statusKind, latencyText } = socket
-const { enabled: previewEnabled, streamUrl, formattedWindowTitle, frameModalOpen, closeAlignRight, placeholderSrc } = screenPreview
+const { enabled: previewEnabled, streamUrl, formattedWindowTitle, frameModalOpen, closeAlignRight } = screenPreview
 const { collapsed: touchpadCollapsed } = touchpad
 const { expanded: powerExpanded, loading: powerLoading, status: powerStatus, modalOpen: powerModalOpen, actionLabel: powerActionLabel } = power
 const controlReady = computed(() => session.authenticated.value)
@@ -220,7 +220,7 @@ onBeforeUnmount(() => {
 
     <SettingsModal v-model:show="settingsOpen" :settings="settings" @save-direct="saveDirect" @open-direct="openDirect" />
     <PowerActionModal v-model:show="powerModalOpen" :loading="powerLoading" :action-label="powerActionLabel" :schedule="power.schedule" @confirm="power.confirmPowerAction" />
-    <ScreenFrameModal ref="frameModalRef" :modal-open="frameModalOpen" :close-align-right="closeAlignRight" :placeholder-src="placeholderSrc" @close="closeFrame" />
+    <ScreenFrameModal ref="frameModalRef" :modal-open="frameModalOpen" :close-align-right="closeAlignRight" @close="closeFrame" />
   </main>
 </template>
 

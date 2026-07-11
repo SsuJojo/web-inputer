@@ -5,6 +5,9 @@ import 'photoswipe/style.css'
 const CURSOR_POLL_WEB_MS = 200
 const CURSOR_POLL_PHYSICAL_MS = 80
 
+// Remembered zoom/pan for the screen frame preview, restored on the next open.
+let savedScreenFrameView = null
+
 export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, keyUp, sendCombo, queueClientLog, currentWindowTitle }) {
   const enabled = ref(false)
   const streamUrl = ref('')
@@ -275,6 +278,24 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
       instance.on('loadError', () => {
         console.debug('[screen-frame:photoswipe-load-error]')
         closeScreenFrame()
+      })
+      instance.on('firstZoomPan', ({ slide }) => {
+        if (!savedScreenFrameView || !slide?.zoomLevels) return
+        const zoom = Math.min(
+          Math.max(savedScreenFrameView.zoom, slide.zoomLevels.min),
+          slide.zoomLevels.max
+        )
+        slide.setZoomLevel(zoom)
+        slide.panTo(savedScreenFrameView.x, savedScreenFrameView.y)
+      })
+      instance.on('close', () => {
+        const slide = instance.currSlide
+        if (!slide?.zoomLevels) return
+        savedScreenFrameView = {
+          zoom: slide.currZoomLevel,
+          x: slide.pan.x,
+          y: slide.pan.y,
+        }
       })
       instance.init()
     } catch (error) {

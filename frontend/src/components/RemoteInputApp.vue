@@ -47,7 +47,8 @@ const touchpad = useTouchpad({ sendInput: socket.sendInput, queueMouseMove: curs
 const power = usePowerControl(message)
 const { checking, loginError } = session
 const { statusText, statusKind, latencyText } = socket
-const { enabled: previewEnabled, streamUrl, formattedWindowTitle, frameModalOpen, closeAlignRight } = screenPreview
+const { enabled: previewEnabled, streamUrl, formattedWindowTitle, frameModalOpen, closeAlignRight, orientationPermission } = screenPreview
+
 const { collapsed: touchpadCollapsed } = touchpad
 const { expanded: powerExpanded, loading: powerLoading, status: powerStatus, modalOpen: powerModalOpen, actionLabel: powerActionLabel } = power
 const controlReady = computed(() => session.authenticated.value)
@@ -152,6 +153,12 @@ function closeFrame() {
   screenPreview.closeScreenFrame()
 }
 
+async function grantOrientationPermission() {
+  const granted = await screenPreview.requestOrientationPermission()
+  if (granted) message.success('传感器权限已获取')
+  else message.warning('未获取传感器权限，图片预览仍可正常使用')
+}
+
 watch(settings, () => saveSettings(settings), { deep: true })
 watch(() => cursorSync.cursorState.value, () => nextTick(updateCursorStyle), { deep: true })
 
@@ -218,7 +225,7 @@ onBeforeUnmount(() => {
       <PowerControlCard :expanded="powerExpanded" :loading="powerLoading" :status="powerStatus" :format-remaining="power.formatPowerRemaining" @toggle="togglePowerExpanded" @refresh="power.refreshPowerStatus" @action="power.openPowerModal" @cancel="power.cancelPowerSchedule" />
     </section>
 
-    <SettingsModal v-model:show="settingsOpen" :settings="settings" @save-direct="saveDirect" @open-direct="openDirect" />
+    <SettingsModal v-model:show="settingsOpen" :settings="settings" :orientation-permission="orientationPermission" @save-direct="saveDirect" @open-direct="openDirect" @grant-orientation="grantOrientationPermission" />
     <PowerActionModal v-model:show="powerModalOpen" :loading="powerLoading" :action-label="powerActionLabel" :schedule="power.schedule" @confirm="power.confirmPowerAction" />
     <ScreenFrameModal ref="frameModalRef" :modal-open="frameModalOpen" :close-align-right="closeAlignRight" @close="closeFrame" />
   </main>

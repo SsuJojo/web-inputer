@@ -1,6 +1,6 @@
 <script setup>
-defineProps({ show: Boolean, settings: Object })
-defineEmits(['update:show', 'save-direct', 'open-direct'])
+defineProps({ show: Boolean, settings: Object, orientationPermission: Boolean })
+defineEmits(['update:show', 'save-direct', 'open-direct', 'grant-orientation'])
 </script>
 
 <template>
@@ -18,6 +18,12 @@ defineEmits(['update:show', 'save-direct', 'open-direct'])
         <n-button type="primary" @click="$emit('open-direct')">直连打开</n-button>
         <n-button secondary @click="$emit('save-direct')">保存</n-button>
       </div>
+      <div class="row">
+        <n-button secondary :disabled="orientationPermission" @click="$emit('grant-orientation')">
+          {{ orientationPermission ? '传感器权限已获取' : '获取传感器权限' }}
+        </n-button>
+      </div>
+      <p class="hint">用于在全屏预览时根据手机倾斜方向移动关闭按钮；不获取权限也不影响图片预览。</p>
       <p class="hint">直连会打开 http://主机IP:端口，不走 Cloudflare。手机需和电脑在同一局域网。</p>
       <div class="switchline"><span>按键气泡</span><n-switch v-model:value="settings.keyBubble" /></div>
       <div class="switchline"><span>按键震动</span><n-switch v-model:value="settings.vibrate" /></div>

@@ -14,7 +14,8 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
   const streamUrl = ref('')
   const frameModalOpen = ref(false)
   const frameUrl = ref('')
-  const closeAlignRight = ref(false)
+  const closeAlignRight = ref(true)
+  const orientationPermission = ref(false)
   let framePlaceholderSrc = ''
   let frameImageWidth = 0
   let frameImageHeight = 0
@@ -292,6 +293,17 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
         wheelToZoom: true,
         zoom: false,
         close: false,
+        bgClickAction: 'close',
+        tapAction: (point, event) => {
+          const target = event.target
+          if (target.classList.contains('pswp__item') || target.classList.contains('pswp__zoom-wrap')) {
+            instance.close()
+            return
+          }
+          if (target.classList.contains('pswp__img')) {
+            instance.currSlide?.toggleZoom(point)
+          }
+        },
         counter: false,
         arrowKeys: false,
         paddingFn: () => ({ top: 6, bottom: 6, left: 6, right: 6 }),
@@ -355,15 +367,21 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
 
   async function requestScreenFrameOrientation() {
     const orientationEvent = window.DeviceOrientationEvent
-    if (!orientationEvent) return
+    if (!orientationEvent) return false
     try {
       if (typeof orientationEvent.requestPermission === 'function') {
         const permission = await orientationEvent.requestPermission()
-        if (permission !== 'granted') return
+        orientationPermission.value = permission === 'granted'
+        if (!orientationPermission.value) return false
+      } else {
+        orientationPermission.value = true
       }
       startScreenFrameOrientation()
+      return true
     } catch (error) {
+      orientationPermission.value = false
       console.debug('[screen-frame:orientation]', error)
+      return false
     }
   }
 
@@ -393,7 +411,6 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
   }
 
   async function openScreenFrame(modalEl, snapshot = {}) {
-    moveScreenFrameCloseTo('left')
     refreshScreenFrame()
     framePlaceholderSrc = snapshot.src || ''
     frameImageWidth = snapshot.width || 0
@@ -401,7 +418,7 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     frameModalOpen.value = true
     await nextTick()
     await requestFullscreen(modalEl)
-    requestScreenFrameOrientation()
+    if (orientationPermission.value) startScreenFrameOrientation()
     cancelScreenFrameOpenRequest()
     screenFrameOpenFrameRequest = window.requestAnimationFrame(() => {
       screenFrameOpenFrameRequest = 0
@@ -421,5 +438,5 @@ export function useScreenPreview({ cursorSync, sendWindowControl, tap, keyDown, 
     stopCursorPollingIfIdle()
   }
 
-  return { enabled, streamUrl, frameModalOpen, frameUrl, closeAlignRight, formattedWindowTitle, setScreenPreview, toggleScreenPreview, switchDesktop, createDesktop, switchWindow, updateCursor, openScreenFrame, closeScreenFrame, refreshScreenFrame }
+  return { enabled, streamUrl, frameModalOpen, frameUrl, closeAlignRight, orientationPermission, formattedWindowTitle, setScreenPreview, toggleScreenPreview, switchDesktop, createDesktop, switchWindow, updateCursor, requestOrientationPermission: requestScreenFrameOrientation, openScreenFrame, closeScreenFrame, refreshScreenFrame }
 }

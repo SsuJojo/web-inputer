@@ -105,6 +105,12 @@ async def security_headers(request: Request, call_next: Any) -> Response:
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Never cache the service worker script: it must stay byte-fresh so browsers
+    # pick up cache-busting updates. Cloudflare caches .js by default, so an
+    # explicit no-store is required here (a stale sw.js leaves clients stuck on
+    # the old frontend build forever).
+    if request.url.path == "/static/sw.js":
+        response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
 

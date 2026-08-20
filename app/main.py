@@ -283,6 +283,10 @@ async def execute_power_command(action: PowerAction, payload: PowerCommandReques
     try:
         if action == PowerAction.SLEEP and payload.wakeEnabled:
             power_controller.validate_confirmation(action, payload.confirm)
+            if payload.delaySeconds > 0:
+                # Delay the sleep (countdown / fixed time) while still arming the
+                # wake timer so the machine wakes at the requested wall-clock time.
+                return await power_controller.schedule_sleep_with_wake(payload.delaySeconds, payload.wakeDelaySeconds)
             return power_controller.sleep_with_wake(payload.wakeDelaySeconds)
         if payload.delaySeconds > 0:
             return await power_controller.schedule(PowerScheduleRequest(

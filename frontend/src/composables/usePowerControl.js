@@ -139,6 +139,24 @@ export function usePowerControl(message) {
         }
         body.wakeEnabled = true
         body.wakeDelaySeconds = wakeDelaySeconds
+        // The sleep timing still applies: the machine sleeps after the chosen
+        // delay (or immediately for mode 'now') and wakes at the wake time.
+        if (schedule.mode === 'countdown') {
+          const minutes = Number(schedule.minutes)
+          if (!Number.isFinite(minutes) || minutes <= 0) {
+            message?.error?.('请输入大于 0 的倒计时分钟数')
+            return null
+          }
+          body.delaySeconds = minutes * 60
+        }
+        if (schedule.mode === 'time') {
+          const delaySeconds = secondsUntilTime(schedule.time)
+          if (!delaySeconds) {
+            message?.error?.('请选择有效的执行时间')
+            return null
+          }
+          body.delaySeconds = delaySeconds
+        }
       } else {
         if (schedule.mode === 'countdown') {
           const minutes = Number(schedule.minutes)

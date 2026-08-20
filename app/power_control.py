@@ -157,6 +157,20 @@ class PowerController:
         self.register_wake_timer(wake_delay_seconds)
         return self.execute_now(PowerAction.SLEEP)
 
+    async def schedule_sleep_with_wake(self, delay_seconds: float, wake_delay_seconds: float) -> PowerStatus:
+        # Register the wake timer first (while the machine is still awake), then
+        # schedule the sleep for delay_seconds later. The wake timer is anchored
+        # to "now" (the wall-clock wake time the user picked), independent of the
+        # sleep delay. If the wake timer fires while the machine is still awake,
+        # the no-op action simply does nothing.
+        self.cancel_schedule()
+        self.register_wake_timer(wake_delay_seconds)
+        due_at = time.time() + delay_seconds
+        schedule_id = uuid4().hex
+        task = asyncio.create_task(self._run_scheduled(schedule_id, PowerAction.SLEEP, delay_seconds))
+        self._scheduled = ScheduledPowerAction(schedule_id, PowerAction.SLEEP, due_at, task)
+        return self._status_response_for(self._scheduled)
+
     def current_schedule(self) -> ScheduledPowerStatus | None:
         if not self._scheduled:
             return None

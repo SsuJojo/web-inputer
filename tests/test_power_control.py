@@ -93,3 +93,22 @@ def test_sleep_with_wake_rejects_non_positive_delay():
 
     with pytest.raises(ValueError):
         controller.sleep_with_wake(0)
+
+
+def test_schedule_sleep_with_wake_registers_wake_timer_and_schedules_sleep():
+    async def run_case():
+        commands = []
+        controller = PowerController(command_runner=commands.append)
+
+        result = await controller.schedule_sleep_with_wake(60, 90)
+
+        assert result.action == "sleep"
+        assert result.status == "scheduled"
+        # Wake timer armed; sleep is only scheduled, not executed yet.
+        assert len(commands) == 1
+        wake_command = commands[0][-1]
+        assert "WebInputWakeUp" in wake_command
+        assert "WakeToRun" in wake_command
+        assert controller.current_schedule() is not None
+
+    asyncio.run(run_case())

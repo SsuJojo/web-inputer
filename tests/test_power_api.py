@@ -70,6 +70,22 @@ class PowerApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"ok": True, "cancelled": True})
 
+    def test_power_sleep_with_wake_calls_controller(self):
+        controller = Mock(spec=PowerController)
+        controller.validate_confirmation.return_value = None
+        controller.sleep_with_wake.return_value = PowerStatus(action=PowerAction.SLEEP, status="executed")
+        main.power_controller = controller
+
+        response = self.client.post(
+            "/api/power/sleep",
+            json={"action": "sleep", "confirm": True, "wakeEnabled": True, "wakeDelaySeconds": 60},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "executed")
+        controller.validate_confirmation.assert_called_once_with(PowerAction.SLEEP, True)
+        controller.sleep_with_wake.assert_called_once_with(60)
+
 
 if __name__ == "__main__":
     unittest.main()

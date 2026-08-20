@@ -1,6 +1,7 @@
 import asyncio
 import subprocess
 
+import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main
@@ -70,3 +71,25 @@ def test_failed_scheduled_power_command_clears_schedule():
         assert controller.current_schedule() is None
 
     asyncio.run(run_case())
+
+
+def test_sleep_with_wake_registers_wake_timer_then_sleeps():
+    commands = []
+    controller = PowerController(command_runner=commands.append)
+
+    result = controller.sleep_with_wake(90)
+
+    assert result.action == "sleep"
+    assert result.status == "executed"
+    assert len(commands) == 2
+    wake_command, sleep_command = commands
+    assert "WebInputWakeUp" in wake_command[-1]
+    assert "WakeToRun" in wake_command[-1]
+    assert sleep_command == controller.command_for("sleep")
+
+
+def test_sleep_with_wake_rejects_non_positive_delay():
+    controller = PowerController(command_runner=lambda _command: None)
+
+    with pytest.raises(ValueError):
+        controller.sleep_with_wake(0)

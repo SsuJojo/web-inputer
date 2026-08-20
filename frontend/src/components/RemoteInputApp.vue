@@ -226,7 +226,7 @@ onBeforeUnmount(() => {
     </section>
 
     <SettingsModal v-model:show="settingsOpen" :settings="settings" :orientation-permission="orientationPermission" @save-direct="saveDirect" @open-direct="openDirect" @grant-orientation="grantOrientationPermission" />
-    <PowerActionModal v-model:show="powerModalOpen" :loading="powerLoading" :action-label="powerActionLabel" :schedule="power.schedule" @confirm="power.confirmPowerAction" />
+    <PowerActionModal v-model:show="powerModalOpen" :loading="powerLoading" :action="power.selectedAction" :action-label="powerActionLabel" :schedule="power.schedule" @confirm="power.confirmPowerAction" />
     <ScreenFrameModal ref="frameModalRef" :modal-open="frameModalOpen" :close-align-right="closeAlignRight" @close="closeFrame" />
   </main>
 </template>

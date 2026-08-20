@@ -275,6 +275,9 @@ async def execute_power_command(action: PowerAction, payload: PowerCommandReques
     if requested_action != action:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Action mismatch")
     try:
+        if action == PowerAction.SLEEP and payload.wakeEnabled:
+            power_controller.validate_confirmation(action, payload.confirm)
+            return power_controller.sleep_with_wake(payload.wakeDelaySeconds)
         if payload.delaySeconds > 0:
             return await power_controller.schedule(PowerScheduleRequest(
                 action=action,

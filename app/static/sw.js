@@ -1,4 +1,4 @@
-const CACHE_NAME = 'remote-input-vue-20260707-photoswipe-01';
+const CACHE_NAME = 'remote-input-vue-20260821-wake-02';
 const STATIC_ASSETS = [
   '/manifest.webmanifest',
 ];

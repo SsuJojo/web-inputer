@@ -209,9 +209,8 @@ class PowerController:
         )
 
     def command_for(self, action: PowerAction) -> list[str]:
-        # Use the legacy system suspend API with fSuspend=TRUE. Unlike
-        # SetSuspendState, this API has no hibernate selector and requests the
-        # suspend path used by the Windows power menu.
+        # Enable the same shutdown privilege available to the Windows power
+        # menu, then request the direct system suspend path.
         sleep_command = [
             "powershell.exe",
             "-NoProfile",
@@ -221,16 +220,37 @@ class PowerController:
             (
                 "$Source = @'\n"
                 "using System;\n"
+                "using System.Diagnostics;\n"
                 "using System.Runtime.InteropServices;\n"
                 "public static class NativePower {\n"
+                "    private const uint TOKEN_QUERY = 0x0008;\n"
+                "    private const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;\n"
+                "    private const uint SE_PRIVILEGE_ENABLED = 0x00000002;\n"
+                "    [StructLayout(LayoutKind.Sequential)] private struct Luid { public uint LowPart; public int HighPart; }\n"
+                "    [StructLayout(LayoutKind.Sequential)] private struct LuidAttributes { public Luid Luid; public uint Attributes; }\n"
+                "    [StructLayout(LayoutKind.Sequential)] private struct TokenPrivileges { public uint PrivilegeCount; public LuidAttributes Privileges; }\n"
+                "    [DllImport(\"advapi32.dll\", SetLastError = true)]\n"
+                "    private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);\n"
+                "    [DllImport(\"advapi32.dll\", SetLastError = true, CharSet = CharSet.Unicode)]\n"
+                "    private static extern bool LookupPrivilegeValue(string systemName, string name, out Luid luid);\n"
+                "    [DllImport(\"advapi32.dll\", SetLastError = true)]\n"
+                "    private static extern bool AdjustTokenPrivileges(IntPtr tokenHandle, bool disableAllPrivileges, ref TokenPrivileges newState, uint bufferLength, IntPtr previousState, IntPtr returnLength);\n"
                 "    [DllImport(\"kernel32.dll\", SetLastError = true)]\n"
                 "    [return: MarshalAs(UnmanagedType.Bool)]\n"
                 "    public static extern bool SetSystemPowerState(bool suspend, bool force);\n"
+                "    public static bool Suspend() {\n"
+                "        IntPtr token;\n"
+                "        if (!OpenProcessToken(Process.GetCurrentProcess().Handle, TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, out token)) return false;\n"
+                "        Luid luid;\n"
+                "        if (!LookupPrivilegeValue(null, \"SeShutdownPrivilege\", out luid)) return false;\n"
+                "        TokenPrivileges privileges = new TokenPrivileges { PrivilegeCount = 1, Privileges = new LuidAttributes { Luid = luid, Attributes = SE_PRIVILEGE_ENABLED } };\n"
+                "        return AdjustTokenPrivileges(token, false, ref privileges, 0, IntPtr.Zero, IntPtr.Zero) && Marshal.GetLastWin32Error() != 1300 && SetSystemPowerState(true, false);\n"
+                "    }\n"
                 "}\n"
                 "'@; "
                 "Add-Type -TypeDefinition $Source; "
-                "if (-not [NativePower]::SetSystemPowerState($true, $false)) { "
-                "throw \"SetSystemPowerState failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
+                "if (-not [NativePower]::Suspend()) { "
+                "throw \"Privileged system suspend failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
                 "}"
             ),
         ]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -128,6 +129,14 @@ class PowerController:
         self._scheduled = None
         return True
 
+    @staticmethod
+    def _windows_command_environment() -> dict[str, str] | None:
+        if os.name != "nt":
+            return None
+        environment = os.environ.copy()
+        environment.setdefault("windir", environment.get("SystemRoot", r"C:\Windows"))
+        return environment
+
     def register_wake_timer(self, wake_delay_seconds: float) -> None:
         if wake_delay_seconds <= 0:
             raise ValueError("Invalid wake delay")
@@ -251,9 +260,30 @@ class PowerController:
                 "}"
             ),
         ]
+        hibernate_command = [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            (
+                "$Source = @'\n"
+                "using System;\n"
+                "using System.Runtime.InteropServices;\n"
+                "public static class NativeHibernate {\n"
+                "    [DllImport(\"PowrProf.dll\", SetLastError = true)]\n"
+                "    public static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);\n"
+                "}\n"
+                "'@; "
+                "Add-Type -TypeDefinition $Source -ErrorAction Stop; "
+                "if (-not [NativeHibernate]::SetSuspendState($true, $false, $false)) { "
+                "throw \"Windows hibernate failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
+                "}"
+            ),
+        ]
         commands: dict[PowerAction, list[str]] = {
             PowerAction.SLEEP: sleep_command,
-            PowerAction.HIBERNATE: ["shutdown.exe", "/h"],
+            PowerAction.HIBERNATE: hibernate_command,
             PowerAction.SHUTDOWN: ["shutdown.exe", "/s", "/t", "0"],
             PowerAction.RESTART: ["shutdown.exe", "/r", "/t", "0"],
             PowerAction.LOCK: ["rundll32.exe", "user32.dll,LockWorkStation"],
@@ -262,6 +292,11 @@ class PowerController:
 
     def _run_command(self, command: list[str]) -> None:
         try:
-            subprocess.run(command, check=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            subprocess.run(
+                command,
+                check=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                env=self._windows_command_environment(),
+            )
         except (OSError, subprocess.CalledProcessError) as exc:
             raise PowerCommandError("Power command failed") from exc

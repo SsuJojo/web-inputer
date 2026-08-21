@@ -1,7 +1,6 @@
 import asyncio
 import subprocess
 
-import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main
@@ -15,7 +14,10 @@ def allow_session(_request, _settings):
 def test_windows_power_command_mapping_uses_explicit_sleep_and_hibernate_commands():
     controller = PowerController()
 
-    assert controller.command_for("hibernate") == ["shutdown.exe", "/h"]
+    hibernate_command = controller.command_for("hibernate")
+    assert hibernate_command[:4] == ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass"]
+    assert "SetSuspendState" in hibernate_command[-1]
+    assert "PowrProf.dll" in hibernate_command[-1]
     sleep_command = controller.command_for("sleep")
     assert sleep_command[:4] == ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass"]
     assert "SendInput" in sleep_command[-1]

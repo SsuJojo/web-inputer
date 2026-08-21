@@ -209,9 +209,9 @@ class PowerController:
         )
 
     def command_for(self, action: PowerAction) -> list[str]:
-        # Call SetSuspendState directly and pass FALSE for bHibernate. This
-        # keeps sleep distinct from the explicit shutdown.exe /h hibernate path
-        # and leaves wake events enabled for scheduled wake-up.
+        # Call SetSuspendState directly and pass FALSE for bHibernate. Force the
+        # transition immediately to match the Windows power-menu sleep action,
+        # while leaving wake events enabled for scheduled wake-up.
         sleep_command = [
             "powershell.exe",
             "-NoProfile",
@@ -229,7 +229,7 @@ class PowerController:
                 "}\n"
                 "'@; "
                 "Add-Type -TypeDefinition $Source; "
-                "if (-not [NativePower]::SetSuspendState($false, $false, $false)) { "
+                "if (-not [NativePower]::SetSuspendState($false, $true, $false)) { "
                 "throw \"SetSuspendState failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
                 "}"
             ),

@@ -209,8 +209,9 @@ class PowerController:
         )
 
     def command_for(self, action: PowerAction) -> list[str]:
-        # Enable the same shutdown privilege available to the Windows power
-        # menu, then request the direct system suspend path.
+        # Reproduce the Windows power-menu path instead of calling
+        # SetSuspendState, which may be interpreted as hibernation when
+        # hibernation is enabled. The accelerators are Win+X, U, S.
         sleep_command = [
             "powershell.exe",
             "-NoProfile",
@@ -220,37 +221,33 @@ class PowerController:
             (
                 "$Source = @'\n"
                 "using System;\n"
-                "using System.Diagnostics;\n"
                 "using System.Runtime.InteropServices;\n"
+                "using System.Threading;\n"
                 "public static class NativePower {\n"
-                "    private const uint TOKEN_QUERY = 0x0008;\n"
-                "    private const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;\n"
-                "    private const uint SE_PRIVILEGE_ENABLED = 0x00000002;\n"
-                "    [StructLayout(LayoutKind.Sequential)] private struct Luid { public uint LowPart; public int HighPart; }\n"
-                "    [StructLayout(LayoutKind.Sequential)] private struct LuidAttributes { public Luid Luid; public uint Attributes; }\n"
-                "    [StructLayout(LayoutKind.Sequential)] private struct TokenPrivileges { public uint PrivilegeCount; public LuidAttributes Privileges; }\n"
-                "    [DllImport(\"advapi32.dll\", SetLastError = true)]\n"
-                "    private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);\n"
-                "    [DllImport(\"advapi32.dll\", SetLastError = true, CharSet = CharSet.Unicode)]\n"
-                "    private static extern bool LookupPrivilegeValue(string systemName, string name, out Luid luid);\n"
-                "    [DllImport(\"advapi32.dll\", SetLastError = true)]\n"
-                "    private static extern bool AdjustTokenPrivileges(IntPtr tokenHandle, bool disableAllPrivileges, ref TokenPrivileges newState, uint bufferLength, IntPtr previousState, IntPtr returnLength);\n"
-                "    [DllImport(\"kernel32.dll\", SetLastError = true)]\n"
-                "    [return: MarshalAs(UnmanagedType.Bool)]\n"
-                "    public static extern bool SetSystemPowerState(bool suspend, bool force);\n"
-                "    public static bool Suspend() {\n"
-                "        IntPtr token;\n"
-                "        if (!OpenProcessToken(Process.GetCurrentProcess().Handle, TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, out token)) return false;\n"
-                "        Luid luid;\n"
-                "        if (!LookupPrivilegeValue(null, \"SeShutdownPrivilege\", out luid)) return false;\n"
-                "        TokenPrivileges privileges = new TokenPrivileges { PrivilegeCount = 1, Privileges = new LuidAttributes { Luid = luid, Attributes = SE_PRIVILEGE_ENABLED } };\n"
-                "        return AdjustTokenPrivileges(token, false, ref privileges, 0, IntPtr.Zero, IntPtr.Zero) && Marshal.GetLastWin32Error() != 1300 && SetSystemPowerState(true, false);\n"
+                "    private const uint INPUT_KEYBOARD = 1;\n"
+                "    private const uint KEYEVENTF_KEYUP = 2;\n"
+                "    [StructLayout(LayoutKind.Sequential)] private struct KeyInput { public ushort Vk; public ushort Scan; public uint Flags; public uint Time; public IntPtr Extra; }\n"
+                "    [StructLayout(LayoutKind.Explicit)] private struct InputUnion { [FieldOffset(0)] public KeyInput Keyboard; }\n"
+                "    [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public InputUnion Data; }\n"
+                "    [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string className, string windowName);\n"
+                "    [DllImport(\"user32.dll\")] private static extern bool SetForegroundWindow(IntPtr window);\n"
+                "    [DllImport(\"user32.dll\", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);\n"
+                "    private static bool Key(ushort vk, bool up) { Input[] inputs = new Input[] { new Input { Type = INPUT_KEYBOARD, Data = new InputUnion { Keyboard = new KeyInput { Vk = vk, Flags = up ? KEYEVENTF_KEYUP : 0 } } } }; return SendInput(1, inputs, Marshal.SizeOf(typeof(Input))) == 1; }\n"
+                "    private static bool Tap(ushort vk) { return Key(vk, false) && Key(vk, true); }\n"
+                "    public static bool SleepMenu() {\n"
+                "        IntPtr tray = FindWindow(\"Shell_TrayWnd\", null);\n"
+                "        if (tray == IntPtr.Zero || !SetForegroundWindow(tray)) return false;\n"
+                "        if (!Key(0x5B, false) || !Tap(0x58) || !Key(0x5B, true)) return false;\n"
+                "        Thread.Sleep(150);\n"
+                "        if (!Tap(0x55)) return false;\n"
+                "        Thread.Sleep(150);\n"
+                "        return Tap(0x53);\n"
                 "    }\n"
                 "}\n"
                 "'@; "
                 "Add-Type -TypeDefinition $Source; "
-                "if (-not [NativePower]::Suspend()) { "
-                "throw \"Privileged system suspend failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
+                "if (-not [NativePower]::SleepMenu()) { "
+                "throw \"Windows sleep menu input failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
                 "}"
             ),
         ]

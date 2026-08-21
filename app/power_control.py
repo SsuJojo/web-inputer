@@ -227,7 +227,7 @@ class PowerController:
                 "    private const uint INPUT_KEYBOARD = 1;\n"
                 "    private const uint KEYEVENTF_KEYUP = 2;\n"
                 "    [StructLayout(LayoutKind.Sequential)] private struct KeyInput { public ushort Vk; public ushort Scan; public uint Flags; public uint Time; public IntPtr Extra; }\n"
-                "    [StructLayout(LayoutKind.Explicit)] private struct InputUnion { [FieldOffset(0)] public KeyInput Keyboard; }\n"
+                "    [StructLayout(LayoutKind.Explicit, Size = 32)] private struct InputUnion { [FieldOffset(0)] public KeyInput Keyboard; }\n"
                 "    [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public InputUnion Data; }\n"
                 "    [DllImport(\"user32.dll\", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);\n"
                 "    private static bool Key(ushort vk, bool up) { Input[] inputs = new Input[] { new Input { Type = INPUT_KEYBOARD, Data = new InputUnion { Keyboard = new KeyInput { Vk = vk, Flags = up ? KEYEVENTF_KEYUP : 0 } } } }; return SendInput(1, inputs, Marshal.SizeOf(typeof(Input))) == 1; }\n"

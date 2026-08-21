@@ -209,17 +209,30 @@ class PowerController:
         )
 
     def command_for(self, action: PowerAction) -> list[str]:
-        # Sleep intentionally uses the Windows Forms API instead of the old
-        # rundll32 SetSuspendState call, which can hibernate when hibernation is
-        # enabled by system policy. Windows may still choose a modern standby
-        # path depending on hardware and power configuration.
+        # Call SetSuspendState directly and pass FALSE for bHibernate. This
+        # keeps sleep distinct from the explicit shutdown.exe /h hibernate path
+        # and leaves wake events enabled for scheduled wake-up.
         sleep_command = [
             "powershell.exe",
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false) | Out-Null",
+            (
+                "$Source = @'\n"
+                "using System;\n"
+                "using System.Runtime.InteropServices;\n"
+                "public static class NativePower {\n"
+                "    [DllImport(\"powrprof.dll\", SetLastError = true)]\n"
+                "    [return: MarshalAs(UnmanagedType.Bool)]\n"
+                "    public static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);\n"
+                "}\n"
+                "'@; "
+                "Add-Type -TypeDefinition $Source; "
+                "if (-not [NativePower]::SetSuspendState($false, $false, $false)) { "
+                "throw \"SetSuspendState failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
+                "}"
+            ),
         ]
         commands: dict[PowerAction, list[str]] = {
             PowerAction.SLEEP: sleep_command,

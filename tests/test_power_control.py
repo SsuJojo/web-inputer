@@ -16,7 +16,10 @@ def test_windows_power_command_mapping_uses_explicit_sleep_and_hibernate_command
     controller = PowerController()
 
     assert controller.command_for("hibernate") == ["shutdown.exe", "/h"]
-    assert controller.command_for("sleep") == ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false) | Out-Null"]
+    sleep_command = controller.command_for("sleep")
+    assert sleep_command[:4] == ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass"]
+    assert "SetSuspendState($false, $false, $false)" in sleep_command[-1]
+    assert "shutdown.exe" not in sleep_command[-1]
 
 
 def test_power_action_requires_explicit_confirm(monkeypatch):

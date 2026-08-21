@@ -209,9 +209,9 @@ class PowerController:
         )
 
     def command_for(self, action: PowerAction) -> list[str]:
-        # Call SetSuspendState directly and pass FALSE for bHibernate. Force the
-        # transition immediately to match the Windows power-menu sleep action,
-        # while leaving wake events enabled for scheduled wake-up.
+        # Use the legacy system suspend API with fSuspend=TRUE. Unlike
+        # SetSuspendState, this API has no hibernate selector and requests the
+        # suspend path used by the Windows power menu.
         sleep_command = [
             "powershell.exe",
             "-NoProfile",
@@ -223,14 +223,14 @@ class PowerController:
                 "using System;\n"
                 "using System.Runtime.InteropServices;\n"
                 "public static class NativePower {\n"
-                "    [DllImport(\"powrprof.dll\", SetLastError = true)]\n"
+                "    [DllImport(\"kernel32.dll\", SetLastError = true)]\n"
                 "    [return: MarshalAs(UnmanagedType.Bool)]\n"
-                "    public static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);\n"
+                "    public static extern bool SetSystemPowerState(bool suspend, bool force);\n"
                 "}\n"
                 "'@; "
                 "Add-Type -TypeDefinition $Source; "
-                "if (-not [NativePower]::SetSuspendState($false, $true, $false)) { "
-                "throw \"SetSuspendState failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
+                "if (-not [NativePower]::SetSystemPowerState($true, $false)) { "
+                "throw \"SetSystemPowerState failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
                 "}"
             ),
         ]

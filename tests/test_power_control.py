@@ -20,8 +20,8 @@ def test_windows_power_command_mapping_uses_explicit_sleep_and_hibernate_command
     assert sleep_command[:4] == ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass"]
     assert "SendInput" in sleep_command[-1]
     assert "0x5B" in sleep_command[-1]
-    assert "0x55" in sleep_command[-1]
-    assert "0x53" in sleep_command[-1]
+    assert "0x16" in sleep_command[-1]
+    assert "0x1F" in sleep_command[-1]
     assert "shutdown.exe" not in sleep_command[-1]
 
 

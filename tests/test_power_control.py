@@ -53,8 +53,6 @@ def test_power_schedule_confirm_and_cancel():
         assert commands == []
 
     asyncio.run(run_case())
-
-
 def test_power_command_failure_returns_controlled_api_error(monkeypatch):
     def fail_command(_command):
         raise subprocess.CalledProcessError(1, ["shutdown.exe"])
@@ -78,46 +76,5 @@ def test_failed_scheduled_power_command_clears_schedule():
         await controller.schedule(PowerScheduleRequest(action="lock", delaySeconds=0.01, confirm=True))
         await asyncio.sleep(0.05)
         assert controller.current_schedule() is None
-
-    asyncio.run(run_case())
-
-
-def test_sleep_with_wake_registers_wake_timer_then_sleeps():
-    commands = []
-    controller = PowerController(command_runner=commands.append)
-
-    result = controller.sleep_with_wake(90)
-
-    assert result.action == "sleep"
-    assert result.status == "executed"
-    assert len(commands) == 2
-    wake_command, sleep_command = commands
-    assert "WebInputWakeUp" in wake_command[-1]
-    assert "WakeToRun" in wake_command[-1]
-    assert sleep_command == controller.command_for("sleep")
-
-
-def test_sleep_with_wake_rejects_non_positive_delay():
-    controller = PowerController(command_runner=lambda _command: None)
-
-    with pytest.raises(ValueError):
-        controller.sleep_with_wake(0)
-
-
-def test_schedule_sleep_with_wake_registers_wake_timer_and_schedules_sleep():
-    async def run_case():
-        commands = []
-        controller = PowerController(command_runner=commands.append)
-
-        result = await controller.schedule_sleep_with_wake(60, 90)
-
-        assert result.action == "sleep"
-        assert result.status == "scheduled"
-        # Wake timer armed; sleep is only scheduled, not executed yet.
-        assert len(commands) == 1
-        wake_command = commands[0][-1]
-        assert "WebInputWakeUp" in wake_command
-        assert "WakeToRun" in wake_command
-        assert controller.current_schedule() is not None
 
     asyncio.run(run_case())

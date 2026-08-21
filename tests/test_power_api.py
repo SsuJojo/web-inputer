@@ -70,39 +70,5 @@ class PowerApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"ok": True, "cancelled": True})
 
-    def test_power_sleep_with_wake_calls_controller(self):
-        controller = Mock(spec=PowerController)
-        controller.validate_confirmation.return_value = None
-        controller.sleep_with_wake.return_value = PowerStatus(action=PowerAction.SLEEP, status="executed")
-        main.power_controller = controller
-
-        response = self.client.post(
-            "/api/power/sleep",
-            json={"action": "sleep", "confirm": True, "wakeEnabled": True, "wakeDelaySeconds": 60},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "executed")
-        controller.validate_confirmation.assert_called_once_with(PowerAction.SLEEP, True)
-        controller.sleep_with_wake.assert_called_once_with(60)
-
-    def test_power_sleep_with_wake_and_delay_schedules_sleep(self):
-        controller = Mock(spec=PowerController)
-        controller.validate_confirmation.return_value = None
-        controller.schedule_sleep_with_wake = AsyncMock(
-            return_value=PowerStatus(id="abc", action=PowerAction.SLEEP, status="scheduled", remaining_seconds=120)
-        )
-        main.power_controller = controller
-
-        response = self.client.post(
-            "/api/power/sleep",
-            json={"action": "sleep", "confirm": True, "wakeEnabled": True, "wakeDelaySeconds": 3600, "delaySeconds": 120},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "scheduled")
-        controller.schedule_sleep_with_wake.assert_awaited_once_with(120, 3600)
-
-
 if __name__ == "__main__":
     unittest.main()

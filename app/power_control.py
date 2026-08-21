@@ -38,8 +38,6 @@ class PowerCommandRequest(BaseModel):
     action: PowerAction | None = None
     delaySeconds: float = Field(default=0, ge=0, le=86400)
     confirm: bool = False
-    wakeEnabled: bool = False
-    wakeDelaySeconds: float = Field(default=0, ge=0, le=86400)
 
     @model_validator(mode="before")
     @classmethod
@@ -94,8 +92,6 @@ CommandRunner = Callable[[list[str]], None]
 
 
 class PowerController:
-    WAKE_TASK_NAME = "WebInputWakeUp"
-
     def __init__(self, command_runner: CommandRunner | None = None) -> None:
         self.command_runner = command_runner or self._run_command
         self._scheduled: ScheduledPowerAction | None = None
@@ -136,49 +132,6 @@ class PowerController:
         environment = os.environ.copy()
         environment.setdefault("windir", environment.get("SystemRoot", r"C:\Windows"))
         return environment
-
-    def register_wake_timer(self, wake_delay_seconds: float) -> None:
-        if wake_delay_seconds <= 0:
-            raise ValueError("Invalid wake delay")
-        # One-shot Windows scheduled task with WakeToRun enabled so the
-        # computer wakes itself from sleep at the target time. The action is a
-        # no-op: the point is the timer firing and waking the machine.
-        command = [
-            "powershell.exe",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            (
-                "$Action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit'; "
-                f"$Trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds({wake_delay_seconds:g}); "
-                "$Settings = New-ScheduledTaskSettingsSet -WakeToRun -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; "
-                f"Register-ScheduledTask -TaskName '{self.WAKE_TASK_NAME}' -Action $Action -Trigger $Trigger -Settings $Settings -Force | Out-Null"
-            ),
-        ]
-        self.command_runner(command)
-
-    def sleep_with_wake(self, wake_delay_seconds: float) -> PowerStatus:
-        # Register the wake timer first (while the machine is still awake),
-        # then suspend immediately. Any pending in-memory schedule is dropped
-        # because the machine is going to sleep right away.
-        self.cancel_schedule()
-        self.register_wake_timer(wake_delay_seconds)
-        return self.execute_now(PowerAction.SLEEP)
-
-    async def schedule_sleep_with_wake(self, delay_seconds: float, wake_delay_seconds: float) -> PowerStatus:
-        # Register the wake timer first (while the machine is still awake), then
-        # schedule the sleep for delay_seconds later. The wake timer is anchored
-        # to "now" (the wall-clock wake time the user picked), independent of the
-        # sleep delay. If the wake timer fires while the machine is still awake,
-        # the no-op action simply does nothing.
-        self.cancel_schedule()
-        self.register_wake_timer(wake_delay_seconds)
-        due_at = time.time() + delay_seconds
-        schedule_id = uuid4().hex
-        task = asyncio.create_task(self._run_scheduled(schedule_id, PowerAction.SLEEP, delay_seconds))
-        self._scheduled = ScheduledPowerAction(schedule_id, PowerAction.SLEEP, due_at, task)
-        return self._status_response_for(self._scheduled)
 
     def current_schedule(self) -> ScheduledPowerStatus | None:
         if not self._scheduled:

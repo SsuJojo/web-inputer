@@ -236,11 +236,11 @@ class PowerController:
                 "    private static bool Tap(ushort scan, bool extended) { return Key(scan, false, extended) && Key(scan, true, extended); }\n"
                 "    public static bool SleepMenu() {\n"
                 "        if (!Key(0x5B, false, true) || !Tap(0x2D, false) || !Key(0x5B, true, true)) return false;\n"
-                "        Thread.Sleep(500);\n"
+                "        Thread.Sleep(250);\n"
                 "        if (!Tap(0x16, false)) return false;\n"
-                "        Thread.Sleep(500);\n"
+                "        Thread.Sleep(250);\n"
                 "        if (!Tap(0x1F, false)) return false;\n"
-                "        Thread.Sleep(100);\n"
+                "        Thread.Sleep(50);\n"
                 "        return Tap(0x2A, false);\n"
                 "    }\n"
                 "}\n"
@@ -262,6 +262,6 @@ class PowerController:
 
     def _run_command(self, command: list[str]) -> None:
         try:
-            subprocess.run(command, check=True)
+            subprocess.run(command, check=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except (OSError, subprocess.CalledProcessError) as exc:
             raise PowerCommandError("Power command failed") from exc

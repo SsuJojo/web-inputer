@@ -16,7 +16,7 @@ export function usePowerControl(message) {
   const status = ref(null)
   const modalOpen = ref(false)
   const selectedAction = ref('shutdown')
-  const schedule = reactive({ mode: 'now', minutes: 10, time: '23:30', wakeEnabled: false, wakeMode: 'countdown', wakeMinutes: 30, wakeTime: '07:00' })
+  const schedule = reactive({ mode: 'now', minutes: 10, time: '23:30' })
   let localTimer = 0
   let syncTimer = 0
   let serverClockOffset = 0
@@ -94,8 +94,6 @@ export function usePowerControl(message) {
   function openPowerModal(action) {
     selectedAction.value = action
     schedule.mode = 'now'
-    schedule.wakeEnabled = false
-    schedule.wakeMode = 'countdown'
     modalOpen.value = true
   }
 
@@ -121,59 +119,21 @@ export function usePowerControl(message) {
     loading.value = true
     try {
       const body = { action: selectedAction.value, confirm: true }
-      if (selectedAction.value === 'sleep' && schedule.wakeEnabled) {
-        let wakeDelaySeconds = null
-        if (schedule.wakeMode === 'countdown') {
-          const minutes = Number(schedule.wakeMinutes)
-          if (!Number.isFinite(minutes) || minutes <= 0) {
-            message?.error?.('请输入大于 0 的唤醒等待分钟数')
-            return null
-          }
-          wakeDelaySeconds = minutes * 60
-        } else {
-          wakeDelaySeconds = secondsUntilTime(schedule.wakeTime)
-          if (!wakeDelaySeconds) {
-            message?.error?.('请选择有效的唤醒时间')
-            return null
-          }
+      if (schedule.mode === 'countdown') {
+        const minutes = Number(schedule.minutes)
+        if (!Number.isFinite(minutes) || minutes <= 0) {
+          message?.error?.('请输入大于 0 的倒计时分钟数')
+          return null
         }
-        body.wakeEnabled = true
-        body.wakeDelaySeconds = wakeDelaySeconds
-        // The sleep timing still applies: the machine sleeps after the chosen
-        // delay (or immediately for mode 'now') and wakes at the wake time.
-        if (schedule.mode === 'countdown') {
-          const minutes = Number(schedule.minutes)
-          if (!Number.isFinite(minutes) || minutes <= 0) {
-            message?.error?.('请输入大于 0 的倒计时分钟数')
-            return null
-          }
-          body.delaySeconds = minutes * 60
+        body.delaySeconds = minutes * 60
+      }
+      if (schedule.mode === 'time') {
+        const delaySeconds = secondsUntilTime(schedule.time)
+        if (!delaySeconds) {
+          message?.error?.('请选择有效的执行时间')
+          return null
         }
-        if (schedule.mode === 'time') {
-          const delaySeconds = secondsUntilTime(schedule.time)
-          if (!delaySeconds) {
-            message?.error?.('请选择有效的执行时间')
-            return null
-          }
-          body.delaySeconds = delaySeconds
-        }
-      } else {
-        if (schedule.mode === 'countdown') {
-          const minutes = Number(schedule.minutes)
-          if (!Number.isFinite(minutes) || minutes <= 0) {
-            message?.error?.('请输入大于 0 的倒计时分钟数')
-            return null
-          }
-          body.delaySeconds = minutes * 60
-        }
-        if (schedule.mode === 'time') {
-          const delaySeconds = secondsUntilTime(schedule.time)
-          if (!delaySeconds) {
-            message?.error?.('请选择有效的执行时间')
-            return null
-          }
-          body.delaySeconds = delaySeconds
-        }
+        body.delaySeconds = delaySeconds
       }
       const result = await postPower(selectedAction.value, body)
       message?.success?.(`${actionLabel.value}指令已发送`)

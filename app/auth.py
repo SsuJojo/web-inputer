@@ -76,9 +76,9 @@ def require_session(request: Request, settings: Settings) -> dict[str, object]:
 
 
 def get_websocket_token(websocket: WebSocket) -> str | None:
-    cookie_token = websocket.cookies.get("remote_input_session")
-    query_token = websocket.query_params.get("token")
-    return cookie_token or query_token
+    # Keep the session token in the HttpOnly cookie. Accepting it in the URL
+    # leaks credentials through browser history, proxy logs, and referrers.
+    return websocket.cookies.get("remote_input_session")
 
 
 def require_websocket_session(websocket: WebSocket, settings: Settings) -> dict[str, object]:

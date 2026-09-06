@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     app_name: str = "Phone Remote Input"
     host: str = "127.0.0.1"
     port: int = 8790
+    direct_probe_port: int = Field(default=8790, ge=1, le=65535)
     public_origin: str = "https://your-domain.example.com"
     secret_key: str = Field(min_length=32)
     admin_password: str = Field(min_length=8)
@@ -52,6 +53,7 @@ def ensure_env_file() -> str | None:
     template = f"""# Auto-generated on first run. Review and edit before exposing publicly.
 HOST=0.0.0.0
 PORT=8790
+DIRECT_PROBE_PORT=8790
 PUBLIC_ORIGIN=https://your-domain.example.com
 ALLOWED_ORIGINS=https://your-domain.example.com
 SECRET_KEY={secret_key}

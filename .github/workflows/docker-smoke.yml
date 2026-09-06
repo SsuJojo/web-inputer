@@ -1,0 +1,38 @@
+name: Docker image smoke
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build --tag web-inputer:smoke .
+
+      - name: Verify non-root runtime and writable paths
+        run: |
+          docker run --rm --entrypoint python web-inputer:smoke -c '
+          import os
+          from pathlib import Path
+
+          assert os.getuid() == 10001, os.getuid()
+          assert os.getgid() == 10001, os.getgid()
+          assert Path("/app").stat().st_uid == 10001
+          assert Path("/app/logs").stat().st_uid == 10001
+
+          for path in (Path("/app/.env"), Path("/app/logs/smoke.log")):
+              path.write_text("docker smoke\\n", encoding="utf-8")
+              path.unlink()
+
+          print("Docker image runs as uid/gid 10001 and can write config/log paths")
+          '

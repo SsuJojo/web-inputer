@@ -97,6 +97,7 @@ SECRET_KEY=至少32位随机字符串，建议64位
 ADMIN_PASSWORD=你的强密码
 PUBLIC_ORIGIN=https://your-domain.example.com
 ALLOWED_ORIGINS=https://your-domain.example.com
+DIRECT_PROBE_PORT=8790
 SESSION_TTL_SECONDS=28800
 TRUSTED_DEVICE_SESSION_TTL_SECONDS=2592000
 ```
@@ -213,6 +214,7 @@ Get-Content .\logs\service-err.log -Tail 100
 - `POST /api/logout`：清除 session。
 - `GET /api/session`：检查登录状态。
 - `GET /health`：健康检查。
+- `GET /api/direct-probe?host=...&port=...`：未登录时用于直连自动切换的受限探测；仅接受字面量 Tailscale IPv4 和 `DIRECT_PROBE_PORT`，并按来源 IP 限速。
 - `WS /ws`：实时输入通道，必须携带 session cookie，且 Origin 必须匹配 `.env` 的 `PUBLIC_ORIGIN` 或 `ALLOWED_ORIGINS`。
 
 WebSocket 输入消息示例：
@@ -236,6 +238,7 @@ WebSocket 输入消息示例：
 6. 保持 `PUBLIC_ORIGIN=https://your-domain.example.com`，避免其他 Origin 建立 WebSocket。
 7. “记住登录状态”不会在前端保存明文密码，只会签发更长有效期的 HttpOnly session cookie；未勾选使用 `SESSION_TTL_SECONDS`，勾选使用 `TRUSTED_DEVICE_SESSION_TTL_SECONDS`。
 8. 日志文件默认在 `logs/remote-input.log`，包含登录失败、限流和 WebSocket 连接 IP。
+9. 直连自动探测在登录前仍可用，但 `/api/direct-probe` 只允许字面量 Tailscale IPv4（`100.64.0.0/10`）和配置的 `DIRECT_PROBE_PORT`，拒绝 DNS、环回、局域网、链路本地、云元数据和任意端口目标。
 
 ## 调试方法
 

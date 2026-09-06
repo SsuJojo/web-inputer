@@ -35,6 +35,10 @@ from app.window_switcher import WindowSwitcher
 logger = logging.getLogger("remote_input")
 settings = get_settings()
 login_limiter = LoginLimiter(settings.login_rate_limit_count, settings.login_rate_limit_window_seconds)
+# The public page calls this before login to decide whether to switch to a
+# previously confirmed Tailscale endpoint. Keep this separate and tightly
+# rate-limited because it intentionally remains unauthenticated.
+direct_probe_limiter = LoginLimiter(30, 60)
 input_controller = InputController(settings)
 screen_previewer = ScreenPreviewer(settings)
 window_switcher = WindowSwitcher()
@@ -152,12 +156,25 @@ async def health() -> HealthResponse:
 
 
 def is_direct_probe_host_allowed(host: str) -> bool:
+    """Allow only literal IPv4 Tailscale addresses for the pre-login probe.
+
+    This endpoint is intentionally reachable before login so the public page can
+    detect the user's already-confirmed direct host. It must not become a
+    general-purpose SSRF primitive: DNS names, loopback, LAN/link-local ranges,
+    cloud metadata addresses, and public IPs are all rejected.
+    """
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
-        return host in {"localhost", "127.0.0.1"}
+        return False
     tailscale_range = ipaddress.ip_network("100.64.0.0/10")
-    return ip.is_private or ip.is_loopback or ip in tailscale_range
+    return ip.version == 4 and ip in tailscale_range
+
+
+def is_direct_probe_port_allowed(port: int) -> bool:
+    # The client stores the local service port in its settings. Requiring the
+    # configured port prevents probing arbitrary services on a Tailscale host.
+    return port == settings.direct_probe_port
 
 
 def check_direct_health(host: str, port: int) -> bool:
@@ -171,9 +188,13 @@ def check_direct_health(host: str, port: int) -> bool:
 
 
 @app.get("/api/direct-probe", response_model=DirectProbeResponse)
-async def direct_probe(host: str, port: int) -> dict[str, bool]:
-    if port < 1 or port > 65535 or not is_direct_probe_host_allowed(host):
+async def direct_probe(host: str, port: int, request: Request) -> dict[str, bool]:
+    if not is_direct_probe_host_allowed(host) or not is_direct_probe_port_allowed(port):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid direct target")
+    client_ip = get_request_ip(request)
+    if not direct_probe_limiter.allow(client_ip):
+        logger.warning("direct probe rate limited ip=%s", client_ip)
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many direct probes")
     ok = await asyncio.to_thread(check_direct_health, host, port)
     return {"ok": ok}
 

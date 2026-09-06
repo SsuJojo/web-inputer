@@ -44,6 +44,7 @@
 - WebSocket 速率限制（防输入洪泛）
 - CORS Origin 校验
 - Tailscale 内网 IP 支持
+- 直连探测仅允许 Tailscale IPv4 + 配置端口，并带来源限速，阻断通用 SSRF 目标
 - HTTPS 安全头：
   - HSTS
   - X-Frame-Options

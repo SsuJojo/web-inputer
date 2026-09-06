@@ -6,7 +6,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# pynput builds evdev on Linux; install only the temporary compiler/header
+# dependencies needed for that wheel, then remove them from the runtime image.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y gcc linux-libc-dev \
+    && pip install --no-cache-dir -r requirements.txt \
+    && apt-get purge --auto-remove -y gcc linux-libc-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app ./app
 COPY run.py .

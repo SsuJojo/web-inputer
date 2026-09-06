@@ -79,6 +79,8 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
+每个 PR 和 `main` 推送还会运行 `.github/workflows/ci.yml`，使用锁定的 pnpm lockfile 构建 `frontend/`。当前前端没有单独的 lint 或 typecheck 脚本，因此 CI 不会伪造这类检查。
+
 ## Windows 本地启动
 
 1. 安装 Python 3.11+。
@@ -114,6 +116,8 @@ Invoke-WebRequest http://127.0.0.1:8790/health
 > 注意：生产通过 Cloudflare 访问时 cookie 使用 `Secure`，必须走 HTTPS。直接用 `http://127.0.0.1:8790` 登录时浏览器可能不会保存 Secure Cookie。
 
 ## Cloudflare Tunnel
+
+下面示例中的 `your-domain.example.com` 是同一个占位域名；实际部署时请将它统一替换为自己的域名，并保持 `PUBLIC_ORIGIN`、`ALLOWED_ORIGINS` 和 Tunnel 的 `hostname` 完全一致。
 
 隧道名：`aiapi`
 

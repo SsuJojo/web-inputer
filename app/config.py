@@ -11,7 +11,7 @@ ENV_PATH = Path(".env")
 class Settings(BaseSettings):
     app_name: str = "Phone Remote Input"
     host: str = "127.0.0.1"
-    port: int = 8787
+    port: int = 8790
     public_origin: str = "https://your-domain.example.com"
     secret_key: str = Field(min_length=32)
     admin_password: str = Field(min_length=8)

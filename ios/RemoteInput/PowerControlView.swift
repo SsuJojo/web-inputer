@@ -26,7 +26,7 @@ struct PowerControlView: View {
                                 Text(action.title).font(.caption.weight(.semibold))
                             }.frame(maxWidth: .infinity, minHeight: 52)
                         }
-                        .buttonStyle(.bordered).disabled(model.powerLoading)
+                        .buttonStyle(.bordered).disabled(model.powerLoading || model.powerStatus?.available == false)
                     }
                     Button(role: .destructive) { Task { await model.cancelPowerSchedule() } } label: {
                         VStack(spacing: 5) {
@@ -36,16 +36,18 @@ struct PowerControlView: View {
                     }
                     .buttonStyle(.bordered).disabled(model.powerLoading || model.powerStatus?.scheduled == nil)
                 }
+                if let message = model.powerStatus?.message { Text(message).font(.caption).foregroundStyle(.secondary) }
                 if let error = model.powerError { Text(error).font(.caption).foregroundStyle(.red) }
             }.padding(.top, 12)
         } label: {
             HStack {
-                Label("电源控制", systemImage: "power").sectionTitle()
+                Label("电源控制", systemImage: "power").sectionTitle().foregroundStyle(.primary)
                 Spacer()
                 if model.powerLoading { ProgressView().controlSize(.small) }
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await model.refreshPowerStatus() } }.labelStyle(.iconOnly)
             }
         }
+        .tint(.primary)
         .remoteCard()
         .sheet(item: $model.selectedPowerAction) { action in
             PowerConfirmationView(action: action).presentationDetents([.medium, .large])

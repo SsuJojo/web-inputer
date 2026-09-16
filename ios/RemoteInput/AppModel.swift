@@ -28,6 +28,7 @@ final class AppModel: ObservableObject {
     private let defaults: UserDefaults
     private var previewTask: Task<Void, Never>?
     private var powerRefreshTask: Task<Void, Never>?
+    private var serverClockOffset = 0.0
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -100,8 +101,11 @@ final class AppModel: ObservableObject {
 
     func sendText() {
         guard !inputText.isEmpty else { return }
-        socket.sendInput(action: "text", fields: ["text": inputText])
-        inputText = ""
+        if socket.sendInput(action: "text", fields: ["text": inputText]) {
+            inputText = ""
+        } else {
+            errorMessage = "连接不可用，文字尚未发送"
+        }
     }
 
     func syncClipboard() {
@@ -154,6 +158,7 @@ final class AppModel: ObservableObject {
         defer { powerLoading = false }
         do {
             powerStatus = try await api.powerStatus(baseURL: baseURL)
+            if let powerStatus { serverClockOffset = powerStatus.serverTime - Date().timeIntervalSince1970 }
             powerError = nil
             schedulePowerRefresh()
         } catch {
@@ -199,20 +204,21 @@ final class AppModel: ObservableObject {
 
     func powerRemainingText(now: Date = Date()) -> String? {
         guard let scheduled = powerStatus?.scheduled else { return nil }
-        let seconds = max(0, Int(scheduled.dueAt - now.timeIntervalSince1970))
+        let seconds = max(0, Int(scheduled.dueAt - (now.timeIntervalSince1970 + serverClockOffset)))
         if seconds < 60 { return "\(seconds) 秒后" }
         return "\(seconds / 60) 分 \(seconds % 60) 秒后"
     }
 
     private func powerDelaySeconds(now: Date = Date()) -> Double {
+        let serverNow = now.addingTimeInterval(serverClockOffset)
         switch powerScheduleMode {
         case .now: return 0
         case .countdown: return Double(max(1, powerDelayMinutes) * 60)
         case .time:
             let calendar = Calendar.current
-            var target = calendar.date(bySettingHour: calendar.component(.hour, from: powerScheduledTime), minute: calendar.component(.minute, from: powerScheduledTime), second: 0, of: now) ?? now
-            if target <= now { target = calendar.date(byAdding: .day, value: 1, to: target) ?? target }
-            return max(1, target.timeIntervalSince(now))
+            var target = calendar.date(bySettingHour: calendar.component(.hour, from: powerScheduledTime), minute: calendar.component(.minute, from: powerScheduledTime), second: 0, of: serverNow) ?? serverNow
+            if target <= serverNow { target = calendar.date(byAdding: .day, value: 1, to: target) ?? target }
+            return max(1, target.timeIntervalSince(serverNow))
         }
     }
 

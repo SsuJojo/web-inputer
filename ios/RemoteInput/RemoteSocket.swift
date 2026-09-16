@@ -21,14 +21,34 @@ final class RemoteSocket: ObservableObject {
     @Published private(set) var state: State = .disconnected
     @Published private(set) var latency: Int?
     @Published private(set) var currentWindowTitle = ""
+    @Published private(set) var operationMessage: String?
 
     private var task: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
+    private var handshakeTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
     private var eventID = 0
+    private var baseURL: URL?
+    private var intentionallyDisconnected = false
+    @Published private(set) var heldKeys = Set<String>()
 
     func connect(baseURL: URL) {
-        disconnect()
+        disconnect(clearBaseURL: false)
+        self.baseURL = baseURL
+        intentionallyDisconnected = false
+        startConnection(baseURL: baseURL)
+    }
+
+    func ensureConnected() {
+        guard task == nil, let baseURL else { return }
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        intentionallyDisconnected = false
+        startConnection(baseURL: baseURL)
+    }
+
+    private func startConnection(baseURL: URL) {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return }
         components.scheme = baseURL.scheme == "https" ? "wss" : "ws"
         components.path = "/ws"
@@ -43,20 +63,33 @@ final class RemoteSocket: ObservableObject {
         let webSocketTask = URLSession.shared.webSocketTask(with: request)
         task = webSocketTask
         webSocketTask.resume()
-        state = .connected
-        send(["type": "claim"])
-        sendWindow(action: "state")
         startReceiving(webSocketTask)
-        startHeartbeat()
+        handshakeTask?.cancel()
+        handshakeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled, let self, self.state != .connected else { return }
+            self.connectionDidFail(task: webSocketTask, message: "连接超时，正在重试")
+        }
     }
 
     func disconnect() {
+        disconnect(clearBaseURL: true)
+    }
+
+    private func disconnect(clearBaseURL: Bool) {
+        intentionallyDisconnected = true
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        releaseHeldKeys()
         receiveTask?.cancel()
         heartbeatTask?.cancel()
+        handshakeTask?.cancel()
         receiveTask = nil
         heartbeatTask = nil
+        handshakeTask = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
+        if clearBaseURL { baseURL = nil }
         latency = nil
         state = .disconnected
     }
@@ -65,13 +98,27 @@ final class RemoteSocket: ObservableObject {
         sendInput(action: "tap", fields: ["key": key])
     }
 
-    func sendCombo(modifiers: [String], key: String) {
-        for modifier in modifiers { sendInput(action: "down", fields: ["key": modifier]) }
-        tap(key)
-        for modifier in modifiers.reversed() { sendInput(action: "up", fields: ["key": modifier]) }
+    func keyDown(_ key: String) {
+        guard !heldKeys.contains(key), sendInput(action: "down", fields: ["key": key]) else { return }
+        heldKeys.insert(key)
     }
 
-    func sendInput(action: String, fields: [String: Any] = [:]) {
+    func keyUp(_ key: String) {
+        guard heldKeys.contains(key) else { return }
+        _ = sendInput(action: "up", fields: ["key": key])
+        heldKeys.remove(key)
+    }
+
+    func sendCombo(modifiers: [String], key: String) {
+        let pressedByCombo = modifiers.filter { !heldKeys.contains($0) }
+        for modifier in pressedByCombo { keyDown(modifier) }
+        tap(key)
+        for modifier in pressedByCombo.reversed() { keyUp(modifier) }
+    }
+
+    @discardableResult
+    func sendInput(action: String, fields: [String: Any] = [:]) -> Bool {
+        guard state == .connected else { return false }
         eventID += 1
         var payload: [String: Any] = [
             "type": "input",
@@ -80,24 +127,28 @@ final class RemoteSocket: ObservableObject {
             "action": action
         ]
         payload.merge(fields) { _, new in new }
-        send(payload)
+        return rawSend(payload)
     }
 
     func sendWindow(action: String, direction: String? = nil) {
+        guard state == .connected else { return }
         eventID += 1
         var payload: [String: Any] = ["type": "window", "id": eventID, "action": action]
         if let direction { payload["direction"] = direction }
-        send(payload)
+        rawSend(payload)
     }
 
-    private func send(_ payload: [String: Any]) {
+    @discardableResult
+    private func rawSend(_ payload: [String: Any]) -> Bool {
         guard JSONSerialization.isValidJSONObject(payload),
               let data = try? JSONSerialization.data(withJSONObject: payload),
-              let text = String(data: data, encoding: .utf8) else { return }
-        task?.send(.string(text)) { [weak self] error in
+              let text = String(data: data, encoding: .utf8),
+              let task else { return false }
+        task.send(.string(text)) { [weak self] error in
             guard let error else { return }
-            Task { @MainActor in self?.state = .failed(error.localizedDescription) }
+            Task { @MainActor in self?.connectionDidFail(task: task, message: error.localizedDescription) }
         }
+        return true
     }
 
     private func startReceiving(_ webSocketTask: URLSessionWebSocketTask) {
@@ -109,7 +160,7 @@ final class RemoteSocket: ObservableObject {
                     self.handle(message)
                 } catch {
                     guard !Task.isCancelled else { return }
-                    self?.state = .failed("连接已断开")
+                    self?.connectionDidFail(task: webSocketTask, message: "连接已断开")
                     return
                 }
             }
@@ -117,11 +168,12 @@ final class RemoteSocket: ObservableObject {
     }
 
     private func startHeartbeat() {
+        heartbeatTask?.cancel()
         heartbeatTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
                 guard let self, !Task.isCancelled else { return }
-                self.send(["type": "ping", "ts": Int(Date().timeIntervalSince1970 * 1000)])
+                self.rawSend(["type": "ping", "ts": Int(Date().timeIntervalSince1970 * 1000)])
             }
         }
     }
@@ -136,13 +188,61 @@ final class RemoteSocket: ObservableObject {
         guard let data,
               let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = value["type"] as? String else { return }
-        if type == "pong", let timestamp = value["ts"] as? NSNumber {
+        if type == "hello" {
+            state = .connecting
+            rawSend(["type": "claim"])
+            rawSend(["type": "ping", "ts": Int(Date().timeIntervalSince1970 * 1000)])
+            startHeartbeat()
+        } else if type == "pong", let timestamp = value["ts"] as? NSNumber {
             latency = max(0, Int(Date().timeIntervalSince1970 * 1000) - timestamp.intValue)
+        } else if type == "control" {
+            if value["ok"] as? Bool == true {
+                handshakeTask?.cancel()
+                handshakeTask = nil
+                state = .connected
+                operationMessage = nil
+                sendWindow(action: "state")
+            } else {
+                operationMessage = value["reason"] as? String ?? "控制权被占用"
+                state = .failed(operationMessage ?? "控制权被占用")
+            }
         } else if type == "window_state",
                   let current = value["current"] as? [String: Any] {
             currentWindowTitle = current["title"] as? String ?? ""
         } else if type == "error" || type == "window_error" {
-            state = .failed(value["message"] as? String ?? "操作失败")
+            operationMessage = value["message"] as? String ?? "操作失败"
+        }
+    }
+
+    func releaseHeldKeys() {
+        for key in heldKeys {
+            eventID += 1
+            rawSend(["type": "input", "id": eventID, "clientTs": Int(Date().timeIntervalSince1970 * 1000), "action": "up", "key": key])
+        }
+        heldKeys.removeAll()
+    }
+
+    private func connectionDidFail(task failedTask: URLSessionWebSocketTask, message: String) {
+        guard task === failedTask else { return }
+        heartbeatTask?.cancel()
+        handshakeTask?.cancel()
+        heartbeatTask = nil
+        handshakeTask = nil
+        failedTask.cancel(with: .goingAway, reason: nil)
+        task = nil
+        heldKeys.removeAll()
+        state = .failed(message)
+        scheduleReconnect()
+    }
+
+    private func scheduleReconnect() {
+        guard !intentionallyDisconnected, reconnectTask == nil, baseURL != nil else { return }
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled, let self, let baseURL = self.baseURL else { return }
+            self.reconnectTask = nil
+            guard self.task == nil else { return }
+            self.startConnection(baseURL: baseURL)
         }
     }
 }

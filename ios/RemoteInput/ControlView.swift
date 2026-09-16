@@ -13,15 +13,16 @@ struct ControlView: View {
                     statusHeader
                     PreviewCard(showingPreview: $showingPreview)
                     TextInputCard()
-                    TouchpadCard()
-                    KeyboardCard()
+                    WindowSwitchCard()
                     PowerControlView()
+                    KeyboardCard()
+                    TouchpadCard()
                 }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 24)
             }
             .background {
-                LinearGradient(colors: [Color(uiColor: .systemGroupedBackground), Color.accentColor.opacity(0.06)], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [Color(red: 0.025, green: 0.055, blue: 0.16), Color(red: 0.045, green: 0.09, blue: 0.22)], startPoint: .top, endPoint: .bottom)
                     .ignoresSafeArea()
             }
             .navigationTitle("Remote Input")
@@ -35,9 +36,11 @@ struct ControlView: View {
             .sheet(isPresented: $showingPreview) { FullScreenPreview() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
+                    model.socket.ensureConnected()
                     model.startPreview()
                     Task { await model.refreshPowerStatus() }
                 } else {
+                    model.socket.releaseHeldKeys()
                     model.stopPreview()
                 }
             }
@@ -45,20 +48,45 @@ struct ControlView: View {
     }
 
     private var statusHeader: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(model.socket.state == .connected ? .green : .orange)
-                .frame(width: 9, height: 9)
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(model.socket.state == .connected ? .green : .orange)
+                    .frame(width: 9, height: 9)
                 Text(model.socket.state.label).font(.subheadline.weight(.semibold))
+                Text("·").foregroundStyle(.tertiary)
                 Text(model.socket.currentWindowTitle.isEmpty ? "等待窗口状态" : model.socket.currentWindowTitle)
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                Label(model.socket.latency.map { "\($0) ms" } ?? "测量中", systemImage: "wave.3.right")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
-            Spacer()
-            Label(model.socket.latency.map { "\($0) ms" } ?? "-- ms", systemImage: "wave.3.right")
-                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            if let message = model.socket.operationMessage {
+                Text(message).font(.caption).foregroundStyle(.orange).frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(.vertical, 8)
+    }
+}
+
+private struct WindowSwitchCard: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button("上一窗口", systemImage: "chevron.left") {
+                model.socket.sendWindow(action: "switch", direction: "left")
+            }
+            .frame(maxWidth: .infinity)
+            Divider().frame(height: 24)
+            Button("下一窗口", systemImage: "chevron.right") {
+                model.socket.sendWindow(action: "switch", direction: "right")
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.blue)
+        .remoteCard()
     }
 }
 
@@ -70,44 +98,47 @@ private struct PreviewCard: View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
                 Button { model.socket.sendCombo(modifiers: ["ctrl", "win"], key: "left") } label: {
-                    Label("桌面", systemImage: "chevron.left")
+                    Text("← 桌面")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.bordered).lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 Spacer()
                 VStack(spacing: 2) {
                     Button(model.previewEnabled ? "关闭预览" : "开启预览", systemImage: model.previewEnabled ? "eye.slash" : "eye") {
                         model.setPreviewEnabled(!model.previewEnabled)
                     }
                     .font(.subheadline.weight(.semibold))
-                    Text(model.socket.currentWindowTitle.isEmpty ? "当前屏幕" : model.socket.currentWindowTitle)
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
                 Button { model.socket.sendCombo(modifiers: ["ctrl", "win"], key: "right") } label: {
-                    Label("桌面", systemImage: "chevron.right")
+                    Text("桌面 →")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.bordered).lineLimit(1).fixedSize(horizontal: true, vertical: false)
             }
 
             ZStack {
                 RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.85)).aspectRatio(16 / 9, contentMode: .fit)
-                if let image = model.previewImage {
-                    Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 14))
-                } else if model.previewLoading {
+                if !model.previewEnabled {
+                    Label("屏幕预览已关闭", systemImage: "display").foregroundStyle(.white.opacity(0.7))
+                } else if model.previewLoading, model.previewImage == nil {
                     ProgressView("正在获取屏幕…").tint(.white).foregroundStyle(.white)
-                } else if model.previewEnabled {
+                } else if let image = model.previewImage {
+                    Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 14))
+                    if model.previewError != nil {
+                        VStack { Spacer(); Label("连接中断，显示上一帧", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.semibold)).padding(8).frame(maxWidth: .infinity)
+                            .background(.black.opacity(0.7)) }
+                    }
+                } else {
                     VStack(spacing: 8) {
                         Image(systemName: "display.trianglebadge.exclamationmark").font(.title2)
                         Text(model.previewError ?? "预览暂不可用").font(.caption).multilineTextAlignment(.center)
                         Button("重试") { model.retryPreview() }.buttonStyle(.bordered)
                     }
                     .foregroundStyle(.white).padding()
-                } else {
-                    Label("屏幕预览已关闭", systemImage: "display").foregroundStyle(.white.opacity(0.7))
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture { if model.previewImage != nil { showingPreview = true } }
+            .onTapGesture { if model.previewEnabled && model.previewImage != nil { showingPreview = true } }
         }
         .remoteCard()
     }
@@ -118,9 +149,11 @@ private struct TextInputCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("文本输入", systemImage: "text.cursor").sectionTitle()
+            Text("文本输入").sectionTitle()
             TextField("输入文字后发送", text: $model.inputText, axis: .vertical)
-                .textFieldStyle(.roundedBorder).lineLimit(2...5)
+                .padding(12).lineLimit(2...4)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                .overlay { RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.12), lineWidth: 1) }
             HStack {
                 Button("换行", systemImage: "return") { model.inputText.append("\n") }.buttonStyle(.bordered)
                 Button("剪贴板", systemImage: "clipboard") { model.syncClipboard() }.buttonStyle(.bordered)
@@ -134,18 +167,13 @@ private struct TextInputCard: View {
 
 private struct TouchpadCard: View {
     @EnvironmentObject private var model: AppModel
-    @State private var expanded = true
+    @State private var expanded = false
     @State private var lastTranslation: CGSize = .zero
     @State private var wheelTranslation: CGFloat = 0
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(spacing: 10) {
-                HStack {
-                    Button("上一窗口", systemImage: "chevron.left") { model.socket.sendWindow(action: "switch", direction: "left") }
-                    Spacer()
-                    Button("下一窗口", systemImage: "chevron.right") { model.socket.sendWindow(action: "switch", direction: "right") }
-                }.buttonStyle(.bordered)
                 HStack(spacing: 8) { trackpad; wheel }
                 HStack {
                     mouseButton("左键", button: "left")
@@ -161,7 +189,7 @@ private struct TouchpadCard: View {
 
     private var trackpad: some View {
         RoundedRectangle(cornerRadius: 16)
-            .fill(Color.primary.opacity(0.055)).frame(height: 190)
+            .fill(Color.primary.opacity(0.055)).frame(height: 140)
             .overlay {
                 VStack(spacing: 8) {
                     Image(systemName: "hand.draw").font(.title)
@@ -186,7 +214,7 @@ private struct TouchpadCard: View {
 
     private var wheel: some View {
         RoundedRectangle(cornerRadius: 16)
-            .fill(Color.primary.opacity(0.07)).frame(width: 56, height: 190)
+            .fill(Color.primary.opacity(0.07)).frame(width: 56, height: 140)
             .overlay(Image(systemName: "arrow.up.and.down").foregroundStyle(.secondary))
             .gesture(DragGesture(minimumDistance: 4)
                 .onChanged { value in
@@ -205,7 +233,6 @@ private struct TouchpadCard: View {
 
 private struct KeyboardCard: View {
     @EnvironmentObject private var model: AppModel
-    @State private var heldModifiers = Set<String>()
     private let rows = [
         ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
         ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
@@ -216,26 +243,12 @@ private struct KeyboardCard: View {
     var body: some View {
         VStack(spacing: 8) {
             Label("键盘", systemImage: "keyboard.fill").sectionTitle().frame(maxWidth: .infinity, alignment: .leading)
-            keyRow(["esc", "tab", "backspace", "enter"])
-            HStack(spacing: 6) {
-                ForEach(["shift", "ctrl", "win", "alt"], id: \.self) { modifier in
-                    Button { toggleModifier(modifier) } label: {
-                        Label(modifier.capitalized, systemImage: heldModifiers.contains(modifier) ? "lock.fill" : "lock.open")
-                            .font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent).tint(heldModifiers.contains(modifier) ? .orange : .blue)
-                }
-            }
+            specialKeyRow
+            modifierRow
             HStack(spacing: 6) { Spacer(); keyButton("up", label: "↑"); Spacer() }
             HStack(spacing: 6) { keyButton("left", label: "←"); keyButton("down", label: "↓"); keyButton("right", label: "→") }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(1...12, id: \.self) { number in
-                        keyButton("f\(number)", label: "F\(number)").frame(width: 48)
-                    }
-                }
-            }
-            ForEach(rows, id: \.self) { keyRow($0) }
+            functionRow
+            letterKeyboard
             HStack(spacing: 6) {
                 keyButton("fn", label: "Fn")
                 Button("空格") { tapWithModifiers("space") }.buttonStyle(.bordered).frame(maxWidth: .infinity)
@@ -245,16 +258,78 @@ private struct KeyboardCard: View {
         .remoteCard()
     }
 
-    private func keyRow(_ keys: [String]) -> some View {
+    private var modifierRow: some View {
         HStack(spacing: 6) {
-            ForEach(keys, id: \.self) { key in keyButton(key, label: key == "backspace" ? "⌫" : key.uppercased()) }
+            ForEach(["shift", "ctrl", "win", "alt"], id: \.self) { modifier in
+                modifierButton(modifier)
+            }
+        }
+    }
+
+    private var specialKeyRow: some View {
+        HStack(spacing: 6) {
+            keyButton("esc", label: "Esc")
+            keyButton("tab", label: "Tab")
+            keyButton("backspace", label: "⌫")
+            keyButton("enter", label: "Enter")
+        }
+    }
+
+    private var functionRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(1...12, id: \.self) { number in
+                    keyButton("f\(number)", label: "F\(number)").frame(width: 48)
+                }
+            }
+        }
+    }
+
+    private var letterKeyboard: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    HStack(spacing: 6) {
+                        ForEach(row, id: \.self) { key in
+                            keyButton(key, label: key.uppercased()).frame(width: 44)
+                        }
+                    }
+                    .padding(.leading, index < 2 ? 0 : CGFloat(index - 1) * 22)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func modifierButton(_ modifier: String) -> some View {
+        let isHeld = model.socket.heldKeys.contains(modifier)
+        if isHeld {
+            Button { toggleModifier(modifier) } label: {
+                Label(modifier.capitalized, systemImage: "lock.fill").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(.orange).accessibilityValue("已锁定")
+        } else {
+            Button { toggleModifier(modifier) } label: {
+                Label(modifier.capitalized, systemImage: "lock.open").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered).tint(.blue).accessibilityValue("未锁定")
+        }
+    }
+
+    private func keyRow(_ keys: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(keys, id: \.self) { key in
+                    keyButton(key, label: key == "backspace" ? "⌫" : key.uppercased()).frame(width: 44)
+                }
+            }
         }
     }
 
     private func keyButton(_ key: String, label: String) -> some View {
         Button(label) { tapWithModifiers(key) }
             .font(.caption.weight(.semibold)).buttonStyle(.bordered)
-            .frame(maxWidth: .infinity).frame(minHeight: 34)
+            .frame(maxWidth: .infinity).frame(minHeight: 44)
     }
 
     private func tapWithModifiers(_ key: String) {
@@ -262,11 +337,10 @@ private struct KeyboardCard: View {
     }
 
     private func toggleModifier(_ key: String) {
-        if heldModifiers.remove(key) != nil {
-            model.socket.sendInput(action: "up", fields: ["key": key])
+        if model.socket.heldKeys.contains(key) {
+            model.socket.keyUp(key)
         } else {
-            heldModifiers.insert(key)
-            model.socket.sendInput(action: "down", fields: ["key": key])
+            model.socket.keyDown(key)
         }
     }
 }
@@ -312,8 +386,8 @@ private struct SettingsView: View {
 extension View {
     func remoteCard() -> some View {
         padding(14)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 1) }
+            .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1) }
     }
 
     func sectionTitle() -> some View { font(.headline) }

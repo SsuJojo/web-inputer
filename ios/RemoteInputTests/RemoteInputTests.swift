@@ -13,5 +13,12 @@ final class RemoteInputTests: XCTestCase {
     func testServerAddressRejectsPath() {
         XCTAssertNil(ServerAddress.normalized("https://remote.example.com/control"))
     }
-}
 
+    func testPowerStatusDecoding() throws {
+        let data = Data(#"{"available":true,"status":"scheduled","serverTime":1000,"scheduled":{"id":"abc","action":"sleep","status":"scheduled","delaySeconds":60,"dueAt":1060,"remainingSeconds":60}}"#.utf8)
+        let status = try JSONDecoder().decode(PowerStatus.self, from: data)
+        XCTAssertTrue(status.available)
+        XCTAssertEqual(status.scheduled?.action, .sleep)
+        XCTAssertEqual(status.scheduled?.remainingSeconds, 60)
+    }
+}

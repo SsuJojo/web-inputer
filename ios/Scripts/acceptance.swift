@@ -49,6 +49,64 @@ struct RemoteInputAcceptance {
               !cookieHeader.isEmpty else { throw AcceptanceError.missingCookie }
         print("LOGIN_OK")
 
+        var frameRequest = URLRequest(url: baseURL.appending(path: "api/screen/frame"))
+        frameRequest.setValue(String(cookieHeader), forHTTPHeaderField: "Cookie")
+        let (frameData, frameResponse) = try await session.data(for: frameRequest)
+        guard let frameHTTP = frameResponse as? HTTPURLResponse,
+              frameHTTP.statusCode == 200,
+              frameData.count > 4,
+              frameData[frameData.startIndex] == 0xFF,
+              frameData[frameData.startIndex + 1] == 0xD8 else {
+            throw AcceptanceError.unexpectedMessage("Screen frame was not a JPEG")
+        }
+        print("SCREEN_FRAME_OK")
+
+        var powerRequest = URLRequest(url: baseURL.appending(path: "api/power/status"))
+        powerRequest.setValue(String(cookieHeader), forHTTPHeaderField: "Cookie")
+        let (powerData, powerResponse) = try await session.data(for: powerRequest)
+        guard let powerHTTP = powerResponse as? HTTPURLResponse,
+              powerHTTP.statusCode == 200,
+              let power = try JSONSerialization.jsonObject(with: powerData) as? [String: Any],
+              power["available"] as? Bool == true else {
+            throw AcceptanceError.unexpectedMessage("Power status was unavailable")
+        }
+        print("POWER_STATUS_OK")
+
+        var scheduleRequest = URLRequest(url: baseURL.appending(path: "api/power/lock"))
+        scheduleRequest.httpMethod = "POST"
+        scheduleRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        scheduleRequest.setValue(String(cookieHeader), forHTTPHeaderField: "Cookie")
+        scheduleRequest.httpBody = try JSONSerialization.data(withJSONObject: [
+            "action": "lock",
+            "confirm": true,
+            "delaySeconds": 300
+        ])
+        let (scheduleData, scheduleResponse) = try await session.data(for: scheduleRequest)
+        guard let scheduleHTTP = scheduleResponse as? HTTPURLResponse,
+              scheduleHTTP.statusCode == 200,
+              let schedule = try JSONSerialization.jsonObject(with: scheduleData) as? [String: Any],
+              schedule["status"] as? String == "scheduled" else {
+            throw AcceptanceError.unexpectedMessage("Power schedule was not created")
+        }
+        print("POWER_SCHEDULE_OK")
+
+        var cancelRequest = URLRequest(url: baseURL.appending(path: "api/power/cancel"))
+        cancelRequest.httpMethod = "POST"
+        cancelRequest.setValue(String(cookieHeader), forHTTPHeaderField: "Cookie")
+        let (_, cancelResponse) = try await session.data(for: cancelRequest)
+        guard let cancelHTTP = cancelResponse as? HTTPURLResponse, cancelHTTP.statusCode == 200 else {
+            throw AcceptanceError.unexpectedMessage("Power schedule was not cancelled")
+        }
+        let (cancelledStatusData, cancelledStatusResponse) = try await session.data(for: powerRequest)
+        guard let cancelledStatusHTTP = cancelledStatusResponse as? HTTPURLResponse,
+              cancelledStatusHTTP.statusCode == 200,
+              let cancelledStatus = try JSONSerialization.jsonObject(with: cancelledStatusData) as? [String: Any],
+              cancelledStatus["status"] as? String == "idle",
+              cancelledStatus["scheduled"] == nil || cancelledStatus["scheduled"] is NSNull else {
+            throw AcceptanceError.unexpectedMessage("Power schedule still exists after cancellation")
+        }
+        print("POWER_CANCEL_OK")
+
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw AcceptanceError.invalidServer
         }

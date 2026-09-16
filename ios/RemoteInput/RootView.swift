@@ -11,7 +11,6 @@ struct RootView: View {
                 LoginView()
             }
         }
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -47,4 +46,3 @@ private struct LoginView: View {
         }
     }
 }
-

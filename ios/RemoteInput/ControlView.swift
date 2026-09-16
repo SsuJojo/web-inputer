@@ -1,25 +1,26 @@
 import SwiftUI
 
 struct ControlView: View {
+    private enum ExpandedPanel { case preview, touchpad, power }
     @EnvironmentObject private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingSettings = false
     @State private var showingPreview = false
+    @State private var expandedPanel: ExpandedPanel?
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 14) {
+                LazyVStack(spacing: 10) {
                     statusHeader
-                    PreviewCard(showingPreview: $showingPreview)
+                    PreviewCard(showingPreview: $showingPreview, expanded: panelBinding(.preview))
                     TextInputCard()
-                    WindowSwitchCard()
-                    PowerControlView()
+                    WindowTouchpadCard(expanded: panelBinding(.touchpad))
                     KeyboardCard()
-                    TouchpadCard()
+                    PowerControlView(expanded: panelBinding(.power))
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 24)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 12)
             }
             .background {
                 LinearGradient(colors: [Color(red: 0.025, green: 0.055, blue: 0.16), Color(red: 0.045, green: 0.09, blue: 0.22)], startPoint: .top, endPoint: .bottom)
@@ -47,6 +48,18 @@ struct ControlView: View {
         }
     }
 
+    private func panelBinding(_ panel: ExpandedPanel) -> Binding<Bool> {
+        Binding(
+            get: { expandedPanel == panel },
+            set: { isExpanded in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isExpanded { expandedPanel = panel }
+                    else if expandedPanel == panel { expandedPanel = nil }
+                }
+            }
+        )
+    }
+
     private var statusHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
@@ -69,45 +82,30 @@ struct ControlView: View {
     }
 }
 
-private struct WindowSwitchCard: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Button("上一窗口", systemImage: "chevron.left") {
-                model.socket.sendWindow(action: "switch", direction: "left")
-            }
-            .frame(maxWidth: .infinity)
-            Divider().frame(height: 24)
-            Button("下一窗口", systemImage: "chevron.right") {
-                model.socket.sendWindow(action: "switch", direction: "right")
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.blue)
-        .remoteCard()
-    }
-}
-
 private struct PreviewCard: View {
     @EnvironmentObject private var model: AppModel
     @Binding var showingPreview: Bool
+    @Binding var expanded: Bool
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: expanded ? 10 : 0) {
             HStack(spacing: 8) {
                 Button { model.socket.sendCombo(modifiers: ["ctrl", "win"], key: "left") } label: {
                     Text("← 桌面")
                 }
                 .buttonStyle(.bordered).lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 Spacer()
-                VStack(spacing: 2) {
-                    Button(model.previewEnabled ? "关闭预览" : "开启预览", systemImage: model.previewEnabled ? "eye.slash" : "eye") {
-                        model.setPreviewEnabled(!model.previewEnabled)
+                Button {
+                    expanded.toggle()
+                    if expanded, !model.previewEnabled { model.setPreviewEnabled(true) }
+                } label: {
+                    VStack(spacing: 1) {
+                        Text(expanded ? "收起预览" : "展开预览").font(.subheadline.weight(.bold))
+                        Text(model.socket.currentWindowTitle.isEmpty ? "等待窗口" : "[ \(model.socket.currentWindowTitle) ]")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    .font(.subheadline.weight(.semibold))
                 }
+                .buttonStyle(.plain).frame(maxWidth: .infinity)
                 Spacer()
                 Button { model.socket.sendCombo(modifiers: ["ctrl", "win"], key: "right") } label: {
                     Text("桌面 →")
@@ -115,7 +113,7 @@ private struct PreviewCard: View {
                 .buttonStyle(.bordered).lineLimit(1).fixedSize(horizontal: true, vertical: false)
             }
 
-            ZStack {
+            if expanded { ZStack {
                 RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.85)).aspectRatio(16 / 9, contentMode: .fit)
                 if !model.previewEnabled {
                     Label("屏幕预览已关闭", systemImage: "display").foregroundStyle(.white.opacity(0.7))
@@ -139,8 +137,9 @@ private struct PreviewCard: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { if model.previewEnabled && model.previewImage != nil { showingPreview = true } }
+            }
         }
-        .remoteCard()
+        .remoteCard(compact: !expanded)
     }
 }
 
@@ -148,31 +147,50 @@ private struct TextInputCard: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("文本输入").sectionTitle()
-            TextField("输入文字后发送", text: $model.inputText, axis: .vertical)
-                .padding(12).lineLimit(2...4)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("文本输入").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                TextField("输入文字后按 Enter 发送", text: $model.inputText)
+                    .onSubmit { model.sendText() }
+                Button("换行", systemImage: "return") { model.inputText.append("\n") }.labelStyle(.iconOnly)
+            }
+                .padding(.horizontal, 12).frame(height: 44)
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                 .overlay { RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.12), lineWidth: 1) }
-            HStack {
-                Button("换行", systemImage: "return") { model.inputText.append("\n") }.buttonStyle(.bordered)
-                Button("剪贴板", systemImage: "clipboard") { model.syncClipboard() }.buttonStyle(.bordered)
-                Spacer()
-                Button("发送", systemImage: "paperplane.fill") { model.sendText() }.buttonStyle(.borderedProminent)
+            HStack(spacing: 8) {
+                Button("发送文本", systemImage: "paperplane.fill") { model.sendText() }
+                    .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                Button("同步剪贴板", systemImage: "clipboard") { model.syncClipboard() }
+                    .buttonStyle(.bordered).frame(maxWidth: .infinity)
             }
         }
-        .remoteCard()
+        .remoteCard(compact: true)
     }
 }
 
-private struct TouchpadCard: View {
+private struct WindowTouchpadCard: View {
     @EnvironmentObject private var model: AppModel
-    @State private var expanded = false
+    @Binding var expanded: Bool
     @State private var lastTranslation: CGSize = .zero
     @State private var wheelTranslation: CGFloat = 0
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
+        VStack(spacing: expanded ? 10 : 0) {
+            HStack(spacing: 8) {
+                Button("上一窗口", systemImage: "chevron.left") { model.socket.sendWindow(action: "switch", direction: "left") }
+                    .frame(maxWidth: .infinity)
+                Button {
+                    expanded.toggle()
+                } label: {
+                    VStack(spacing: 1) {
+                        Text(expanded ? "收起触控板" : "展开触控板").font(.subheadline.weight(.bold))
+                        Text("按住滚轮").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }.buttonStyle(.plain).frame(maxWidth: .infinity)
+                Button("下一窗口", systemImage: "chevron.right") { model.socket.sendWindow(action: "switch", direction: "right") }
+                    .frame(maxWidth: .infinity)
+            }.buttonStyle(.plain).foregroundStyle(.blue)
+            if expanded {
             VStack(spacing: 10) {
                 HStack(spacing: 8) { trackpad; wheel }
                 HStack {
@@ -180,11 +198,10 @@ private struct TouchpadCard: View {
                     mouseButton("中键", button: "middle")
                     mouseButton("右键", button: "right")
                 }
-            }.padding(.top, 12)
-        } label: {
-            Label("触控板", systemImage: "hand.draw.fill").sectionTitle()
+            }
+            }
         }
-        .remoteCard()
+        .remoteCard(compact: !expanded)
     }
 
     private var trackpad: some View {
@@ -241,21 +258,19 @@ private struct KeyboardCard: View {
     ]
 
     var body: some View {
-        VStack(spacing: 8) {
-            Label("键盘", systemImage: "keyboard.fill").sectionTitle().frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 6) {
             specialKeyRow
             modifierRow
-            HStack(spacing: 6) { Spacer(); keyButton("up", label: "↑"); Spacer() }
+            HStack(spacing: 6) { Spacer(); keyButton("up", label: "↑").frame(maxWidth: 116); Spacer() }
             HStack(spacing: 6) { keyButton("left", label: "←"); keyButton("down", label: "↓"); keyButton("right", label: "→") }
-            functionRow
             letterKeyboard
             HStack(spacing: 6) {
                 keyButton("fn", label: "Fn")
-                Button("空格") { tapWithModifiers("space") }.buttonStyle(.bordered).frame(maxWidth: .infinity)
+                Button("空格") { tapWithModifiers("space") }.keyboardKeyStyle().frame(maxWidth: .infinity)
                 keyButton("enter", label: "Enter")
             }
         }
-        .remoteCard()
+        .remoteCard(compact: true)
     }
 
     private var modifierRow: some View {
@@ -286,17 +301,16 @@ private struct KeyboardCard: View {
     }
 
     private var letterKeyboard: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 5) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                     HStack(spacing: 6) {
+                        if index >= 2 { Spacer(minLength: CGFloat(index - 1) * 14) }
                         ForEach(row, id: \.self) { key in
-                            keyButton(key, label: key.uppercased()).frame(width: 44)
+                            keyButton(key, label: key.uppercased())
                         }
+                        if index >= 2 { Spacer(minLength: CGFloat(index - 1) * 14) }
                     }
-                    .padding(.leading, index < 2 ? 0 : CGFloat(index - 1) * 22)
                 }
-            }
         }
     }
 
@@ -328,8 +342,7 @@ private struct KeyboardCard: View {
 
     private func keyButton(_ key: String, label: String) -> some View {
         Button(label) { tapWithModifiers(key) }
-            .font(.caption.weight(.semibold)).buttonStyle(.bordered)
-            .frame(maxWidth: .infinity).frame(minHeight: 44)
+            .keyboardKeyStyle()
     }
 
     private func tapWithModifiers(_ key: String) {
@@ -384,11 +397,20 @@ private struct SettingsView: View {
 }
 
 extension View {
-    func remoteCard() -> some View {
-        padding(14)
+    func remoteCard(compact: Bool = false) -> some View {
+        padding(compact ? 10 : 14)
             .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1) }
     }
 
     func sectionTitle() -> some View { font(.headline) }
+
+    func keyboardKeyStyle() -> some View {
+        buttonStyle(.plain)
+            .font(.caption.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1) }
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
 }

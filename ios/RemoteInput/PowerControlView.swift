@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PowerControlView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var expanded = false
+    @Binding var expanded: Bool
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {

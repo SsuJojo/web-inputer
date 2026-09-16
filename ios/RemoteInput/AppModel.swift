@@ -29,10 +29,11 @@ final class AppModel: ObservableObject {
     private var previewTask: Task<Void, Never>?
     private var powerRefreshTask: Task<Void, Never>?
     private var serverClockOffset = 0.0
+    private var activeBaseURL: URL?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        serverAddress = defaults.string(forKey: "serverAddress") ?? "https://"
+        serverAddress = defaults.string(forKey: "serverAddress") ?? BackendAddressPolicy.defaultAddress
 #if DEBUG
         let environment = ProcessInfo.processInfo.environment
         if let server = environment["REMOTE_INPUT_SERVER"],
@@ -49,43 +50,59 @@ final class AppModel: ObservableObject {
     }
 
     var baseURL: URL? {
-        ServerAddress.normalized(serverAddress)
+        activeBaseURL ?? ServerAddress.normalized(serverAddress)
     }
 
+    var activeBackendDescription: String {
+        guard let baseURL else { return "未连接" }
+        return baseURL == BackendAddressPolicy.publicURL ? "公网回退" : "Tailscale / 直连"
+    }
+
+    var webURL: URL { baseURL ?? BackendAddressPolicy.publicURL }
+
     func login() async {
-        guard let baseURL else {
+        guard ServerAddress.normalized(serverAddress) != nil else {
             errorMessage = "请输入有效的服务器地址"
             return
         }
         isBusy = true
         errorMessage = nil
-        do {
-            try await api.login(baseURL: baseURL, password: password, keepSignedIn: keepSignedIn)
-            defaults.set(baseURL.absoluteString, forKey: "serverAddress")
-            serverAddress = baseURL.absoluteString
-            password = ""
-            isAuthenticated = true
-            socket.connect(baseURL: baseURL)
-            startPreview()
-            await refreshPowerStatus()
-        } catch {
-            errorMessage = error.localizedDescription
+        var lastError: Error?
+        for candidate in BackendAddressPolicy.candidates(customAddress: serverAddress) {
+            do {
+                try await login(candidate: candidate)
+                activeBaseURL = candidate
+                defaults.set(serverAddress, forKey: "serverAddress")
+                password = ""
+                isAuthenticated = true
+                socket.connect(baseURL: candidate)
+                startPreview()
+                await refreshPowerStatus()
+                isBusy = false
+                return
+            } catch {
+                lastError = error
+            }
         }
+        errorMessage = lastError?.localizedDescription ?? "无法连接服务器"
         isBusy = false
     }
 
     func restoreSession() async {
-        guard let baseURL else { return }
         isBusy = true
         defer { isBusy = false }
-        do {
-            guard try await api.hasSession(baseURL: baseURL) else { return }
-            isAuthenticated = true
-            socket.connect(baseURL: baseURL)
-            startPreview()
-            await refreshPowerStatus()
-        } catch {
-            return
+        for candidate in BackendAddressPolicy.candidates(customAddress: serverAddress) {
+            do {
+                guard try await api.hasSession(baseURL: candidate) else { continue }
+                activeBaseURL = candidate
+                isAuthenticated = true
+                socket.connect(baseURL: candidate)
+                startPreview()
+                await refreshPowerStatus()
+                return
+            } catch {
+                continue
+            }
         }
     }
 
@@ -96,6 +113,7 @@ final class AppModel: ObservableObject {
         socket.disconnect()
         stopPreview()
         powerRefreshTask?.cancel()
+        activeBaseURL = nil
         isAuthenticated = false
     }
 
@@ -231,6 +249,29 @@ final class AppModel: ObservableObject {
             await self?.refreshPowerStatus()
         }
     }
+
+    private func login(candidate: URL) async throws {
+        let api = api
+        let password = password
+        let keepSignedIn = keepSignedIn
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await api.login(baseURL: candidate, password: password, keepSignedIn: keepSignedIn)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(candidate == BackendAddressPolicy.publicURL ? 12 : 3))
+                throw BackendSelectionError.timedOut
+            }
+            _ = try await group.next()
+            group.cancelAll()
+        }
+    }
+}
+
+private enum BackendSelectionError: LocalizedError {
+    case timedOut
+
+    var errorDescription: String? { "连接超时" }
 }
 
 enum ServerAddress {

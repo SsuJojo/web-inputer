@@ -20,7 +20,7 @@ struct PowerControlView: View {
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(PowerAction.allCases) { action in
-                        Button { model.openPowerConfirmation(action) } label: {
+                        Button { Feedback.tap(); model.openPowerConfirmation(action) } label: {
                             VStack(spacing: 5) {
                                 Image(systemName: action.symbol).font(.title3)
                                 Text(action.title).font(.caption.weight(.semibold))
@@ -28,7 +28,7 @@ struct PowerControlView: View {
                         }
                         .buttonStyle(.bordered).disabled(model.powerLoading || model.powerStatus?.available == false)
                     }
-                    Button(role: .destructive) { Task { await model.cancelPowerSchedule() } } label: {
+                    Button(role: .destructive) { Feedback.tap(); Task { await model.cancelPowerSchedule() } } label: {
                         VStack(spacing: 5) {
                             Image(systemName: "xmark.circle").font(.title3)
                             Text("取消计划").font(.caption.weight(.semibold))
@@ -44,10 +44,11 @@ struct PowerControlView: View {
                 Label("电源控制", systemImage: "power").sectionTitle().foregroundStyle(.primary)
                 Spacer()
                 if model.powerLoading { ProgressView().controlSize(.small) }
-                Button("刷新", systemImage: "arrow.clockwise") { Task { await model.refreshPowerStatus() } }.labelStyle(.iconOnly)
+                Button("刷新", systemImage: "arrow.clockwise") { Feedback.tap(); Task { await model.refreshPowerStatus() } }.labelStyle(.iconOnly)
             }
         }
         .tint(.primary)
+        .onChange(of: expanded) { _, _ in Feedback.tap() }
         .remoteCard()
         .sheet(item: $model.selectedPowerAction) { action in
             PowerConfirmationView(action: action).presentationDetents([.medium, .large])
@@ -84,6 +85,7 @@ private struct PowerConfirmationView: View {
                 }
                 Section {
                     Button {
+                        Feedback.tap()
                         Task { if await model.performSelectedPowerAction() { dismiss() } }
                     } label: {
                         HStack {
@@ -98,7 +100,7 @@ private struct PowerConfirmationView: View {
             }
             .navigationTitle("确认\(action.title)")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { Button("取消") { model.selectedPowerAction = nil; dismiss() } }
+            .toolbar { Button("取消") { Feedback.tap(); model.selectedPowerAction = nil; dismiss() } }
         }
     }
 }

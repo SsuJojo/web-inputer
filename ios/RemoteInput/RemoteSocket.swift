@@ -94,19 +94,23 @@ final class RemoteSocket: ObservableObject {
         state = .disconnected
     }
 
-    func tap(_ key: String) {
+    @discardableResult
+    func tap(_ key: String) -> Bool {
         sendInput(action: "tap", fields: ["key": key])
     }
 
-    func keyDown(_ key: String) {
-        guard !heldKeys.contains(key), sendInput(action: "down", fields: ["key": key]) else { return }
+    @discardableResult
+    func keyDown(_ key: String) -> Bool {
+        guard !heldKeys.contains(key), sendInput(action: "down", fields: ["key": key]) else { return false }
         heldKeys.insert(key)
+        return true
     }
 
-    func keyUp(_ key: String) {
-        guard heldKeys.contains(key) else { return }
-        _ = sendInput(action: "up", fields: ["key": key])
+    @discardableResult
+    func keyUp(_ key: String) -> Bool {
+        guard heldKeys.contains(key), sendInput(action: "up", fields: ["key": key]) else { return false }
         heldKeys.remove(key)
+        return true
     }
 
     func sendCombo(modifiers: [String], key: String) {

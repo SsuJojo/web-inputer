@@ -1,7 +1,6 @@
 import asyncio
 import subprocess
 
-import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main
@@ -15,8 +14,18 @@ def allow_session(_request, _settings):
 def test_windows_power_command_mapping_uses_explicit_sleep_and_hibernate_commands():
     controller = PowerController()
 
-    assert controller.command_for("hibernate") == ["shutdown.exe", "/h"]
-    assert controller.command_for("sleep") == ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false) | Out-Null"]
+    hibernate_command = controller.command_for("hibernate")
+    assert hibernate_command[:4] == ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass"]
+    assert "SetSuspendState" in hibernate_command[-1]
+    assert "PowrProf.dll" in hibernate_command[-1]
+    sleep_command = controller.command_for("sleep")
+    assert sleep_command[:4] == ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass"]
+    assert "SendInput" in sleep_command[-1]
+    assert "0x5B" in sleep_command[-1]
+    assert "0x16" in sleep_command[-1]
+    assert "0x1F" in sleep_command[-1]
+    assert "0x2A" in sleep_command[-1]
+    assert "shutdown.exe" not in sleep_command[-1]
 
 
 def test_power_action_requires_explicit_confirm(monkeypatch):
@@ -44,8 +53,6 @@ def test_power_schedule_confirm_and_cancel():
         assert commands == []
 
     asyncio.run(run_case())
-
-
 def test_power_command_failure_returns_controlled_api_error(monkeypatch):
     def fail_command(_command):
         raise subprocess.CalledProcessError(1, ["shutdown.exe"])
@@ -69,46 +76,5 @@ def test_failed_scheduled_power_command_clears_schedule():
         await controller.schedule(PowerScheduleRequest(action="lock", delaySeconds=0.01, confirm=True))
         await asyncio.sleep(0.05)
         assert controller.current_schedule() is None
-
-    asyncio.run(run_case())
-
-
-def test_sleep_with_wake_registers_wake_timer_then_sleeps():
-    commands = []
-    controller = PowerController(command_runner=commands.append)
-
-    result = controller.sleep_with_wake(90)
-
-    assert result.action == "sleep"
-    assert result.status == "executed"
-    assert len(commands) == 2
-    wake_command, sleep_command = commands
-    assert "WebInputWakeUp" in wake_command[-1]
-    assert "WakeToRun" in wake_command[-1]
-    assert sleep_command == controller.command_for("sleep")
-
-
-def test_sleep_with_wake_rejects_non_positive_delay():
-    controller = PowerController(command_runner=lambda _command: None)
-
-    with pytest.raises(ValueError):
-        controller.sleep_with_wake(0)
-
-
-def test_schedule_sleep_with_wake_registers_wake_timer_and_schedules_sleep():
-    async def run_case():
-        commands = []
-        controller = PowerController(command_runner=commands.append)
-
-        result = await controller.schedule_sleep_with_wake(60, 90)
-
-        assert result.action == "sleep"
-        assert result.status == "scheduled"
-        # Wake timer armed; sleep is only scheduled, not executed yet.
-        assert len(commands) == 1
-        wake_command = commands[0][-1]
-        assert "WebInputWakeUp" in wake_command
-        assert "WakeToRun" in wake_command
-        assert controller.current_schedule() is not None
 
     asyncio.run(run_case())

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -37,8 +38,6 @@ class PowerCommandRequest(BaseModel):
     action: PowerAction | None = None
     delaySeconds: float = Field(default=0, ge=0, le=86400)
     confirm: bool = False
-    wakeEnabled: bool = False
-    wakeDelaySeconds: float = Field(default=0, ge=0, le=86400)
 
     @model_validator(mode="before")
     @classmethod
@@ -93,8 +92,6 @@ CommandRunner = Callable[[list[str]], None]
 
 
 class PowerController:
-    WAKE_TASK_NAME = "WebInputWakeUp"
-
     def __init__(self, command_runner: CommandRunner | None = None) -> None:
         self.command_runner = command_runner or self._run_command
         self._scheduled: ScheduledPowerAction | None = None
@@ -128,48 +125,13 @@ class PowerController:
         self._scheduled = None
         return True
 
-    def register_wake_timer(self, wake_delay_seconds: float) -> None:
-        if wake_delay_seconds <= 0:
-            raise ValueError("Invalid wake delay")
-        # One-shot Windows scheduled task with WakeToRun enabled so the
-        # computer wakes itself from sleep at the target time. The action is a
-        # no-op: the point is the timer firing and waking the machine.
-        command = [
-            "powershell.exe",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            (
-                "$Action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit'; "
-                f"$Trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds({wake_delay_seconds:g}); "
-                "$Settings = New-ScheduledTaskSettingsSet -WakeToRun -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; "
-                f"Register-ScheduledTask -TaskName '{self.WAKE_TASK_NAME}' -Action $Action -Trigger $Trigger -Settings $Settings -Force | Out-Null"
-            ),
-        ]
-        self.command_runner(command)
-
-    def sleep_with_wake(self, wake_delay_seconds: float) -> PowerStatus:
-        # Register the wake timer first (while the machine is still awake),
-        # then suspend immediately. Any pending in-memory schedule is dropped
-        # because the machine is going to sleep right away.
-        self.cancel_schedule()
-        self.register_wake_timer(wake_delay_seconds)
-        return self.execute_now(PowerAction.SLEEP)
-
-    async def schedule_sleep_with_wake(self, delay_seconds: float, wake_delay_seconds: float) -> PowerStatus:
-        # Register the wake timer first (while the machine is still awake), then
-        # schedule the sleep for delay_seconds later. The wake timer is anchored
-        # to "now" (the wall-clock wake time the user picked), independent of the
-        # sleep delay. If the wake timer fires while the machine is still awake,
-        # the no-op action simply does nothing.
-        self.cancel_schedule()
-        self.register_wake_timer(wake_delay_seconds)
-        due_at = time.time() + delay_seconds
-        schedule_id = uuid4().hex
-        task = asyncio.create_task(self._run_scheduled(schedule_id, PowerAction.SLEEP, delay_seconds))
-        self._scheduled = ScheduledPowerAction(schedule_id, PowerAction.SLEEP, due_at, task)
-        return self._status_response_for(self._scheduled)
+    @staticmethod
+    def _windows_command_environment() -> dict[str, str] | None:
+        if os.name != "nt":
+            return None
+        environment = os.environ.copy()
+        environment.setdefault("windir", environment.get("SystemRoot", r"C:\Windows"))
+        return environment
 
     def current_schedule(self) -> ScheduledPowerStatus | None:
         if not self._scheduled:
@@ -209,21 +171,72 @@ class PowerController:
         )
 
     def command_for(self, action: PowerAction) -> list[str]:
-        # Sleep intentionally uses the Windows Forms API instead of the old
-        # rundll32 SetSuspendState call, which can hibernate when hibernation is
-        # enabled by system policy. Windows may still choose a modern standby
-        # path depending on hardware and power configuration.
+        # Reproduce the Windows power-menu path instead of calling
+        # SetSuspendState, which may be interpreted as hibernation when
+        # hibernation is enabled. The accelerators are Win+X, U, S.
         sleep_command = [
             "powershell.exe",
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false) | Out-Null",
+            (
+                "$Source = @'\n"
+                "using System;\n"
+                "using System.Runtime.InteropServices;\n"
+                "using System.Threading;\n"
+                "public static class NativePower {\n"
+                "    private const uint INPUT_KEYBOARD = 1;\n"
+                "    private const uint KEYEVENTF_KEYUP = 2;\n"
+                "    private const uint KEYEVENTF_SCANCODE = 8;\n"
+                "    private const uint KEYEVENTF_EXTENDEDKEY = 1;\n"
+                "    [StructLayout(LayoutKind.Sequential)] private struct KeyInput { public ushort Vk; public ushort Scan; public uint Flags; public uint Time; public IntPtr Extra; }\n"
+                "    [StructLayout(LayoutKind.Explicit, Size = 32)] private struct InputUnion { [FieldOffset(0)] public KeyInput Keyboard; }\n"
+                "    [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public InputUnion Data; }\n"
+                "    [DllImport(\"user32.dll\", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);\n"
+                "    private static bool Key(ushort scan, bool up, bool extended) { uint flags = KEYEVENTF_SCANCODE | (up ? KEYEVENTF_KEYUP : 0) | (extended ? KEYEVENTF_EXTENDEDKEY : 0); Input[] inputs = new Input[] { new Input { Type = INPUT_KEYBOARD, Data = new InputUnion { Keyboard = new KeyInput { Scan = scan, Flags = flags } } } }; return SendInput(1, inputs, Marshal.SizeOf(typeof(Input))) == 1; }\n"
+                "    private static bool Tap(ushort scan, bool extended) { return Key(scan, false, extended) && Key(scan, true, extended); }\n"
+                "    public static bool SleepMenu() {\n"
+                "        if (!Key(0x5B, false, true) || !Tap(0x2D, false) || !Key(0x5B, true, true)) return false;\n"
+                "        Thread.Sleep(250);\n"
+                "        if (!Tap(0x16, false)) return false;\n"
+                "        Thread.Sleep(250);\n"
+                "        if (!Tap(0x1F, false)) return false;\n"
+                "        Thread.Sleep(50);\n"
+                "        return Tap(0x2A, false);\n"
+                "    }\n"
+                "}\n"
+                "'@; "
+                "Add-Type -TypeDefinition $Source; "
+                "if (-not [NativePower]::SleepMenu()) { "
+                "throw \"Windows sleep menu input failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
+                "}"
+            ),
+        ]
+        hibernate_command = [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            (
+                "$Source = @'\n"
+                "using System;\n"
+                "using System.Runtime.InteropServices;\n"
+                "public static class NativeHibernate {\n"
+                "    [DllImport(\"PowrProf.dll\", SetLastError = true)]\n"
+                "    public static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);\n"
+                "}\n"
+                "'@; "
+                "Add-Type -TypeDefinition $Source -ErrorAction Stop; "
+                "if (-not [NativeHibernate]::SetSuspendState($true, $false, $false)) { "
+                "throw \"Windows hibernate failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())\" "
+                "}"
+            ),
         ]
         commands: dict[PowerAction, list[str]] = {
             PowerAction.SLEEP: sleep_command,
-            PowerAction.HIBERNATE: ["shutdown.exe", "/h"],
+            PowerAction.HIBERNATE: hibernate_command,
             PowerAction.SHUTDOWN: ["shutdown.exe", "/s", "/t", "0"],
             PowerAction.RESTART: ["shutdown.exe", "/r", "/t", "0"],
             PowerAction.LOCK: ["rundll32.exe", "user32.dll,LockWorkStation"],
@@ -232,6 +245,11 @@ class PowerController:
 
     def _run_command(self, command: list[str]) -> None:
         try:
-            subprocess.run(command, check=True)
+            subprocess.run(
+                command,
+                check=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                env=self._windows_command_environment(),
+            )
         except (OSError, subprocess.CalledProcessError) as exc:
             raise PowerCommandError("Power command failed") from exc

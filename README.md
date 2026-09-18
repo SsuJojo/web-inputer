@@ -2,6 +2,8 @@
 
 手机浏览器访问 `https://your-domain.example.com`，登录后通过 WebSocket 把键盘、文本、剪贴板、鼠标事件实时发送到 Windows 主机，由 Python 服务注入为真实输入事件。
 
+> **iOS 客户端**：本项目提供原生 iOS 客户端，但 iOS 端不开源。如需购买授权、安装包或定制支持，请单独联系作者付费购买。
+
 ## 目录结构
 
 ```text

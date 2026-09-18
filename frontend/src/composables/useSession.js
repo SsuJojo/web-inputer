@@ -2,8 +2,11 @@ import { ref } from 'vue'
 import { getJson, postJson } from '@/api/http'
 import { saveSettings } from './useSettings'
 
+const REMEMBERED_SESSION_KEY = 'remote-input:has-successful-session'
+
 export function useSession(settings, logSwitch = () => {}) {
   const authenticated = ref(false)
+  const rememberedSession = ref(localStorage.getItem(REMEMBERED_SESSION_KEY) === '1')
   const checking = ref(false)
   const loginError = ref('')
   let directFallbackTimer = 0
@@ -143,8 +146,13 @@ export function useSession(settings, logSwitch = () => {}) {
     try {
       await getJson('/api/session')
       authenticated.value = true
+      rememberedSession.value = true
       return true
-    } catch {
+    } catch (error) {
+      if (error?.status === 401) {
+        rememberedSession.value = false
+        localStorage.removeItem(REMEMBERED_SESSION_KEY)
+      }
       authenticated.value = false
       return false
     } finally {
@@ -157,6 +165,8 @@ export function useSession(settings, logSwitch = () => {}) {
     try {
       await postJson('/api/login', { password, keepSignedIn })
       authenticated.value = true
+      rememberedSession.value = true
+      localStorage.setItem(REMEMBERED_SESSION_KEY, '1')
       return true
     } catch (error) {
       loginError.value = String(error.message || '').includes('429') || String(error.message || '').includes('Too many') ? '尝试过多，请稍后再试' : '密码错误'
@@ -168,10 +178,13 @@ export function useSession(settings, logSwitch = () => {}) {
   async function logout() {
     await postJson('/api/logout').catch(() => {})
     authenticated.value = false
+    rememberedSession.value = false
+    localStorage.removeItem(REMEMBERED_SESSION_KEY)
   }
 
   return {
     authenticated,
+    rememberedSession,
     checking,
     loginError,
     publicHostname,

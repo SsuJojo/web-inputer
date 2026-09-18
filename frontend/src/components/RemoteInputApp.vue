@@ -51,7 +51,7 @@ const { enabled: previewEnabled, streamUrl, formattedWindowTitle, frameModalOpen
 
 const { collapsed: touchpadCollapsed } = touchpad
 const { expanded: powerExpanded, loading: powerLoading, status: powerStatus, modalOpen: powerModalOpen, actionLabel: powerActionLabel, selectedAction: powerSelectedAction } = power
-const controlReady = computed(() => session.authenticated.value)
+const controlReady = computed(() => session.authenticated.value || session.rememberedSession.value)
 
 function updateCursorStyle() {
   const stage = screenPreviewRef.value?.stageRef

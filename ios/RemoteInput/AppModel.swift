@@ -7,6 +7,8 @@ final class AppModel: ObservableObject {
     @Published var password = ""
     @Published var keepSignedIn = true
     @Published var isAuthenticated = false
+    @Published var hasKnownServer = false
+    @Published var sessionInvalidated = false
     @Published var isBusy = false
     @Published var errorMessage: String?
     @Published var inputText = ""
@@ -45,6 +47,7 @@ final class AppModel: ObservableObject {
         }
 #endif
         if defaults.string(forKey: "serverAddress") != nil {
+            hasKnownServer = true
             Task { await restoreSession() }
         }
     }
@@ -75,6 +78,8 @@ final class AppModel: ObservableObject {
                 defaults.set(serverAddress, forKey: "serverAddress")
                 password = ""
                 isAuthenticated = true
+                sessionInvalidated = false
+                hasKnownServer = true
                 socket.connect(baseURL: candidate)
                 startPreview()
                 await refreshPowerStatus()
@@ -89,20 +94,29 @@ final class AppModel: ObservableObject {
     }
 
     func restoreSession() async {
-        isBusy = true
-        defer { isBusy = false }
+        var invalidated = false
+        var transientFailure = false
         for candidate in BackendAddressPolicy.candidates(customAddress: serverAddress) {
             do {
-                guard try await api.hasSession(baseURL: candidate) else { continue }
+                guard try await api.hasSession(baseURL: candidate) else {
+                    invalidated = true
+                    continue
+                }
                 activeBaseURL = candidate
                 isAuthenticated = true
+                sessionInvalidated = false
                 socket.connect(baseURL: candidate)
                 startPreview()
                 await refreshPowerStatus()
                 return
             } catch {
+                transientFailure = true
                 continue
             }
+        }
+        if invalidated && !transientFailure {
+            sessionInvalidated = true
+            isAuthenticated = false
         }
     }
 
@@ -115,6 +129,8 @@ final class AppModel: ObservableObject {
         powerRefreshTask?.cancel()
         activeBaseURL = nil
         isAuthenticated = false
+        hasKnownServer = false
+        sessionInvalidated = false
     }
 
     func sendText() {

@@ -6,7 +6,7 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if model.isAuthenticated {
+            if model.isAuthenticated || (model.hasKnownServer && !model.sessionInvalidated) {
                 ControlView()
             } else {
                 LoginView()

@@ -1,6 +1,10 @@
 export async function getJson(path) {
   const response = await fetch(path, { credentials: 'include' })
-  if (!response.ok) throw new Error(await errorMessage(response))
+  if (!response.ok) {
+    const error = new Error(await errorMessage(response))
+    error.status = response.status
+    throw error
+  }
   return response.json()
 }
 

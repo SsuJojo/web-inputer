@@ -14,4 +14,5 @@ frontend/node_modules/
 memory/
 *.spec.bak
 .git_old/
-/ios/
+ios/*.xcodeproj/
+ios/DerivedData/

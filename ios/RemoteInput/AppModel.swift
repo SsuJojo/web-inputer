@@ -1,0 +1,305 @@
+import Foundation
+import UIKit
+
+@MainActor
+final class AppModel: ObservableObject {
+    @Published var serverAddress: String
+    @Published var password = ""
+    @Published var keepSignedIn = true
+    @Published var isAuthenticated = false
+    @Published var hasKnownServer = false
+    @Published var sessionInvalidated = false
+    @Published var isBusy = false
+    @Published var errorMessage: String?
+    @Published var inputText = ""
+    @Published var previewEnabled = true
+    @Published var previewImage: UIImage?
+    @Published var previewLoading = false
+    @Published var previewError: String?
+    @Published var powerStatus: PowerStatus?
+    @Published var powerLoading = false
+    @Published var powerError: String?
+    @Published var selectedPowerAction: PowerAction?
+    @Published var powerScheduleMode: PowerScheduleMode = .now
+    @Published var powerDelayMinutes = 10
+    @Published var powerScheduledTime = Date().addingTimeInterval(3600)
+    @Published var powerConfirmation = 0.0
+
+    let socket = RemoteSocket()
+    private let api = RemoteAPI()
+    private let defaults: UserDefaults
+    private var previewTask: Task<Void, Never>?
+    private var powerRefreshTask: Task<Void, Never>?
+    private var serverClockOffset = 0.0
+    private var activeBaseURL: URL?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        serverAddress = defaults.string(forKey: "serverAddress") ?? BackendAddressPolicy.defaultAddress
+#if DEBUG
+        let environment = ProcessInfo.processInfo.environment
+        if let server = environment["REMOTE_INPUT_SERVER"],
+           let launchPassword = environment["REMOTE_INPUT_PASSWORD"] {
+            serverAddress = server
+            password = launchPassword
+            Task { await login() }
+            return
+        }
+#endif
+        if defaults.string(forKey: "serverAddress") != nil {
+            hasKnownServer = true
+            Task { await restoreSession() }
+        }
+    }
+
+    var baseURL: URL? {
+        activeBaseURL ?? ServerAddress.normalized(serverAddress)
+    }
+
+    var activeBackendDescription: String {
+        guard let baseURL else { return "未连接" }
+        return baseURL == BackendAddressPolicy.publicURL ? "公网回退" : "Tailscale / 直连"
+    }
+
+    var webURL: URL { baseURL ?? BackendAddressPolicy.publicURL }
+
+    func login() async {
+        guard ServerAddress.normalized(serverAddress) != nil else {
+            errorMessage = "请输入有效的服务器地址"
+            return
+        }
+        isBusy = true
+        errorMessage = nil
+        var lastError: Error?
+        for candidate in BackendAddressPolicy.candidates(customAddress: serverAddress) {
+            do {
+                try await login(candidate: candidate)
+                activeBaseURL = candidate
+                defaults.set(serverAddress, forKey: "serverAddress")
+                password = ""
+                isAuthenticated = true
+                sessionInvalidated = false
+                hasKnownServer = true
+                socket.connect(baseURL: candidate)
+                startPreview()
+                await refreshPowerStatus()
+                isBusy = false
+                return
+            } catch {
+                lastError = error
+            }
+        }
+        errorMessage = lastError?.localizedDescription ?? "无法连接服务器"
+        isBusy = false
+    }
+
+    func restoreSession() async {
+        var invalidated = false
+        var transientFailure = false
+        for candidate in BackendAddressPolicy.candidates(customAddress: serverAddress) {
+            do {
+                guard try await api.hasSession(baseURL: candidate) else {
+                    invalidated = true
+                    continue
+                }
+                activeBaseURL = candidate
+                isAuthenticated = true
+                sessionInvalidated = false
+                socket.connect(baseURL: candidate)
+                startPreview()
+                await refreshPowerStatus()
+                return
+            } catch {
+                transientFailure = true
+                continue
+            }
+        }
+        if invalidated && !transientFailure {
+            sessionInvalidated = true
+            isAuthenticated = false
+        }
+    }
+
+    func logout() async {
+        if let baseURL {
+            try? await api.logout(baseURL: baseURL)
+        }
+        socket.disconnect()
+        stopPreview()
+        powerRefreshTask?.cancel()
+        activeBaseURL = nil
+        isAuthenticated = false
+        hasKnownServer = false
+        sessionInvalidated = false
+    }
+
+    func sendText() {
+        guard !inputText.isEmpty else { return }
+        if socket.sendInput(action: "text", fields: ["text": inputText]) {
+            inputText = ""
+        } else {
+            errorMessage = "连接不可用，文字尚未发送"
+        }
+    }
+
+    func syncClipboard() {
+        socket.sendInput(action: "clipboard_set", fields: ["text": inputText])
+    }
+
+    func setPreviewEnabled(_ enabled: Bool) {
+        previewEnabled = enabled
+        enabled ? startPreview() : stopPreview()
+    }
+
+    func startPreview() {
+        guard previewEnabled, previewTask == nil, let baseURL else { return }
+        previewLoading = previewImage == nil
+        previewError = nil
+        previewTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    let data = try await self?.api.screenFrame(baseURL: baseURL)
+                    guard let data, let image = UIImage(data: data) else { throw APIError.invalidResponse }
+                    guard !Task.isCancelled else { return }
+                    self?.previewImage = image
+                    self?.previewLoading = false
+                    self?.previewError = nil
+                    try? await Task.sleep(for: .milliseconds(650))
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self?.previewLoading = false
+                    self?.previewError = error.localizedDescription
+                    try? await Task.sleep(for: .seconds(2))
+                }
+            }
+        }
+    }
+
+    func stopPreview() {
+        previewTask?.cancel()
+        previewTask = nil
+        previewLoading = false
+    }
+
+    func retryPreview() {
+        stopPreview()
+        startPreview()
+    }
+
+    func refreshPowerStatus() async {
+        guard let baseURL else { return }
+        powerLoading = true
+        defer { powerLoading = false }
+        do {
+            powerStatus = try await api.powerStatus(baseURL: baseURL)
+            if let powerStatus { serverClockOffset = powerStatus.serverTime - Date().timeIntervalSince1970 }
+            powerError = nil
+            schedulePowerRefresh()
+        } catch {
+            powerError = error.localizedDescription
+        }
+    }
+
+    func openPowerConfirmation(_ action: PowerAction) {
+        selectedPowerAction = action
+        powerScheduleMode = .now
+        powerConfirmation = 0
+    }
+
+    func performSelectedPowerAction() async -> Bool {
+        guard let baseURL, let action = selectedPowerAction, powerConfirmation >= 0.92 else { return false }
+        powerLoading = true
+        defer { powerLoading = false }
+        do {
+            let delay = powerDelaySeconds()
+            powerStatus = try await api.performPowerAction(baseURL: baseURL, action: action, delaySeconds: delay)
+            powerError = nil
+            selectedPowerAction = nil
+            schedulePowerRefresh()
+            return true
+        } catch {
+            powerError = error.localizedDescription
+            return false
+        }
+    }
+
+    func cancelPowerSchedule() async {
+        guard let baseURL else { return }
+        powerLoading = true
+        defer { powerLoading = false }
+        do {
+            try await api.cancelPowerSchedule(baseURL: baseURL)
+            powerStatus = try await api.powerStatus(baseURL: baseURL)
+            powerError = nil
+        } catch {
+            powerError = error.localizedDescription
+        }
+    }
+
+    func powerRemainingText(now: Date = Date()) -> String? {
+        guard let scheduled = powerStatus?.scheduled else { return nil }
+        let seconds = max(0, Int(scheduled.dueAt - (now.timeIntervalSince1970 + serverClockOffset)))
+        if seconds < 60 { return "\(seconds) 秒后" }
+        return "\(seconds / 60) 分 \(seconds % 60) 秒后"
+    }
+
+    private func powerDelaySeconds(now: Date = Date()) -> Double {
+        let serverNow = now.addingTimeInterval(serverClockOffset)
+        switch powerScheduleMode {
+        case .now: return 0
+        case .countdown: return Double(max(1, powerDelayMinutes) * 60)
+        case .time:
+            let calendar = Calendar.current
+            var target = calendar.date(bySettingHour: calendar.component(.hour, from: powerScheduledTime), minute: calendar.component(.minute, from: powerScheduledTime), second: 0, of: serverNow) ?? serverNow
+            if target <= serverNow { target = calendar.date(byAdding: .day, value: 1, to: target) ?? target }
+            return max(1, target.timeIntervalSince(serverNow))
+        }
+    }
+
+    private func schedulePowerRefresh() {
+        powerRefreshTask?.cancel()
+        guard powerStatus?.scheduled != nil else { return }
+        powerRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled else { return }
+            await self?.refreshPowerStatus()
+        }
+    }
+
+    private func login(candidate: URL) async throws {
+        let api = api
+        let password = password
+        let keepSignedIn = keepSignedIn
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await api.login(baseURL: candidate, password: password, keepSignedIn: keepSignedIn)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(candidate == BackendAddressPolicy.publicURL ? 12 : 3))
+                throw BackendSelectionError.timedOut
+            }
+            _ = try await group.next()
+            group.cancelAll()
+        }
+    }
+}
+
+private enum BackendSelectionError: LocalizedError {
+    case timedOut
+
+    var errorDescription: String? { "连接超时" }
+}
+
+enum ServerAddress {
+    static func normalized(_ value: String) -> URL? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard var components = URLComponents(string: candidate),
+              ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+              components.host != nil else { return nil }
+        components.path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard components.path.isEmpty else { return nil }
+        return components.url
+    }
+}

@@ -231,37 +231,133 @@ private struct WindowTouchpadCard: View {
             .buttonStyle(.bordered).frame(maxWidth: .infinity)
     }
 }
+private struct PressAwareKeyStyle: ButtonStyle {
+    var onPressChanged: ((Bool) -> Void)? = nil
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, isPressed in
+                onPressChanged?(isPressed)
+            }
+    }
+}
 
 private struct KeyboardCard: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("keyBubblesEnabled") private var keyBubblesEnabled = true
     @State private var activeBubble: String?
     @State private var bubbleTask: Task<Void, Never>?
-    private let rows = [
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+    @State private var fnActive = false
+    @State private var pressedKeys: Set<String> = []
+    private let letterRows = [
         ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
         ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
-        ["z", "x", "c", "v", "b", "n", "m"]
+        ["z", "x", "c", "v", "b", "n", "m", "backspace"]
     ]
 
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+    private var rowGap: CGFloat { isCompact ? 8 : 10 }
+    private var arrowGap: CGFloat { isCompact ? 8 : 10 }
+    private var keyGridGap: CGFloat { isCompact ? 6 : 8 }
+    private var keyGap: CGFloat { isCompact ? 5 : 8 }
+    private var arrowMargin: CGFloat { isCompact ? 9 : 12 }
+    private var keyCornerRadius: CGFloat { isCompact ? 9 : 12 }
+    private var controlCornerRadius: CGFloat { isCompact ? 11 : 12 }
+    private var keyInsets: CGFloat { isCompact ? 9 : 13 }
+    private var horizontalOutset: CGFloat { isCompact ? -2 : 2 }
+    private var digitKeys: [String] {
+        fnActive ? (1...12).map { "f\($0)" } : ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+    }
+    private var keySurface: Color {
+        colorScheme == .dark
+            ? Color(red: 0.0667, green: 0.0941, blue: 0.1529)
+            : Color(red: 0.9451, green: 0.9608, blue: 0.9765)
+    }
+    private var keyText: Color {
+        colorScheme == .dark
+            ? Color(red: 0.898, green: 0.9059, blue: 0.9216)
+            : Color(red: 0.0588, green: 0.0902, blue: 0.1647)
+    }
+    private var keyBorder: Color {
+        colorScheme == .dark
+            ? Color(red: 0.5804, green: 0.6392, blue: 0.7216).opacity(0.22)
+            : Color(red: 0.0588, green: 0.0902, blue: 0.1647).opacity(0.12)
+    }
+    private var actionGradient: LinearGradient {
+        LinearGradient(
+            colors: [Color(red: 0.0549, green: 0.6471, blue: 0.9137), Color(red: 0.1451, green: 0.3882, blue: 0.9216)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+    private var modifierActiveGradient: LinearGradient {
+        LinearGradient(
+            colors: [Color(red: 0.9765, green: 0.451, blue: 0.0863), Color(red: 0.9373, green: 0.2667, blue: 0.2667)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+    private var fnActiveGradient: LinearGradient {
+        LinearGradient(
+            colors: [Color(red: 0.1333, green: 0.7725, blue: 0.3686), Color(red: 0.0549, green: 0.6471, blue: 0.9137)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+    private var panelColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.0588, green: 0.0902, blue: 0.1647).opacity(0.86)
+            : Color.white.opacity(0.88)
+    }
+    private var panelBorder: Color {
+        colorScheme == .dark
+            ? Color(red: 0.5804, green: 0.6392, blue: 0.7216).opacity(0.22)
+            : Color(red: 0.0588, green: 0.0902, blue: 0.1647).opacity(0.12)
+    }
+
     var body: some View {
-        VStack(spacing: 6) {
-            specialKeyRow
-            modifierRow
-            HStack(spacing: 6) { Spacer(); keyButton("up", label: "↑").frame(maxWidth: 116); Spacer() }
-            HStack(spacing: 6) { keyButton("left", label: "←"); keyButton("down", label: "↓"); keyButton("right", label: "→") }
-            letterKeyboard
-            HStack(spacing: 6) {
-                keyButton("fn", label: "Fn")
-                keyButton("space", label: "空格")
-                keyButton("enter", label: "Enter")
+        VStack(spacing: 0) {
+            VStack(spacing: rowGap) {
+                specialKeyRow
+                modifierRow
             }
+            .padding(.top, rowGap)
+
+            arrowKeyboard
+                .padding(.vertical, arrowMargin)
+
+            letterKeyboard
         }
-        .remoteCard(compact: true)
+        .padding(keyInsets)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .circular))
+        .overlay {
+            RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .circular)
+                .fill(panelColor)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .circular)
+                .stroke(panelBorder, lineWidth: 1)
+        }
+        .shadow(
+            color: colorScheme == .dark ? .black.opacity(0.25) : Color(red: 0.0588, green: 0.0902, blue: 0.1647).opacity(0.12),
+            radius: 20,
+            x: 0,
+            y: 18
+        )
+        .padding(.horizontal, horizontalOutset)
+        .onDisappear {
+            for key in pressedKeys { _ = model.socket.keyUp(key) }
+            pressedKeys.removeAll()
+        }
     }
 
     private var modifierRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: rowGap) {
             ForEach(["shift", "ctrl", "win", "alt"], id: \.self) { modifier in
                 modifierButton(modifier)
             }
@@ -269,70 +365,155 @@ private struct KeyboardCard: View {
     }
 
     private var specialKeyRow: some View {
-        HStack(spacing: 6) {
-            keyButton("esc", label: "Esc")
-            keyButton("tab", label: "Tab")
-            keyButton("backspace", label: "⌫")
-            keyButton("enter", label: "Enter")
+        HStack(spacing: rowGap) {
+            actionKeyButton("esc", label: "Esc")
+            actionKeyButton("tab", label: "Tab")
+            actionKeyButton("backspace", label: "⌫")
+            actionKeyButton("enter", label: "Enter")
         }
     }
 
-    private var functionRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(1...12, id: \.self) { number in
-                    keyButton("f\(number)", label: "F\(number)").frame(width: 48)
-                }
-            }
+    private var arrowKeyboard: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: arrowGap), count: 3)
+        return LazyVGrid(columns: columns, spacing: arrowGap) {
+            Color.clear
+            actionKeyButton("up", label: "↑")
+            Color.clear
+            actionKeyButton("left", label: "←")
+            actionKeyButton("down", label: "↓")
+            actionKeyButton("right", label: "→")
         }
     }
 
     private var letterKeyboard: some View {
-        VStack(spacing: 5) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    HStack(spacing: 6) {
-                        if index >= 2 { Spacer(minLength: CGFloat(index - 1) * 14) }
-                        ForEach(row, id: \.self) { key in
-                            keyButton(key, label: key.uppercased())
-                        }
-                        if index >= 2 { Spacer(minLength: CGFloat(index - 1) * 14) }
-                    }
-                }
+        VStack(spacing: keyGridGap) {
+            keyboardRow(digitKeys, horizontalInset: 0, holdable: false, digitLabels: true)
+                .animation(fnActive ? .easeOut(duration: 0.13) : nil, value: fnActive)
+            keyboardRow(letterRows[0], horizontalInset: 0, holdable: true)
+            keyboardRow(letterRows[1], horizontalInset: 0.04, holdable: true)
+            keyboardRow(letterRows[2], horizontalInset: isCompact ? 0.05 : 0.096, holdable: true)
+            spaceRow
         }
     }
 
-    @ViewBuilder
     private func modifierButton(_ modifier: String) -> some View {
         let isHeld = model.socket.heldKeys.contains(modifier)
-        if isHeld {
-            Button { toggleModifier(modifier) } label: {
-                Label(modifier.capitalized, systemImage: "lock.fill").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+        return Button { toggleModifier(modifier) } label: {
+            HStack(spacing: 4) {
+                Text(isHeld ? "🔒" : "🔓").font(.system(size: 14))
+                Text(modifier.capitalized).font(.system(size: 14, weight: .bold))
             }
-            .buttonStyle(.borderedProminent).tint(.orange).accessibilityValue("已锁定")
-            .overlay(alignment: .top) { keyBubble(modifier.capitalized, key: modifier) }
-        } else {
-            Button { toggleModifier(modifier) } label: {
-                Label(modifier.capitalized, systemImage: "lock.open").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered).tint(.blue).accessibilityValue("未锁定")
-            .overlay(alignment: .top) { keyBubble(modifier.capitalized, key: modifier) }
         }
+        .buttonStyle(PressAwareKeyStyle())
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .foregroundStyle(.white)
+        .background(isHeld ? modifierActiveGradient : actionGradient, in: RoundedRectangle(cornerRadius: controlCornerRadius, style: .circular))
+        .accessibilityLabel(modifier.capitalized)
+        .accessibilityValue(isHeld ? "已锁定" : "未锁定")
+        .overlay(alignment: .top) { keyBubble(modifier.capitalized, key: modifier) }
     }
 
-    private func keyRow(_ keys: [String]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+    private func keyboardRow(
+        _ keys: [String],
+        horizontalInset: CGFloat,
+        holdable: Bool,
+        digitLabels: Bool = false
+    ) -> some View {
+        GeometryReader { geometry in
+            HStack(spacing: keyGap) {
                 ForEach(keys, id: \.self) { key in
-                    keyButton(key, label: key == "backspace" ? "⌫" : key.uppercased()).frame(width: 44)
+                    let label = digitLabels && fnActive ? String(key.dropFirst()) : (key == "backspace" ? "⌫" : key.uppercased())
+                    if holdable {
+                        heldKeyButton(key, label: label).frame(maxWidth: .infinity)
+                    } else {
+                        keyButton(key, label: label, fontSize: fnActive && digitLabels ? 13 : 14).frame(maxWidth: .infinity)
+                    }
                 }
             }
+            .padding(.horizontal, geometry.size.width * horizontalInset)
         }
+        .frame(height: 48)
     }
 
-    private func keyButton(_ key: String, label: String) -> some View {
-        Button(label) { tapWithModifiers(key) }
-            .keyboardKeyStyle()
-            .overlay(alignment: .top) { keyBubble(label, key: key) }
+    private var spaceRow: some View {
+        GeometryReader { geometry in
+            let inset = geometry.size.width * (isCompact ? 0.04 : 0.06)
+            let gaps = keyGap * 2
+            let flexibleWidth = max(0, geometry.size.width - inset * 2 - gaps - (isCompact ? 40 : 44))
+            HStack(spacing: keyGap) {
+                fnButton.frame(width: isCompact ? 40 : 44)
+                keyButton("space", label: "空格", fontSize: 14)
+                    .frame(width: flexibleWidth / 1.42)
+                keyButton("enter", label: "Enter", fontSize: 14)
+                    .frame(width: flexibleWidth * 0.42 / 1.42)
+            }
+            .padding(.horizontal, inset)
+        }
+        .frame(height: 48)
+    }
+
+    private var fnButton: some View {
+        Button(action: toggleFn) {
+            Text("Fn").font(.system(size: 14, weight: .bold))
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(fnActive ? .white : keyText)
+                .background {
+                    if fnActive {
+                        RoundedRectangle(cornerRadius: keyCornerRadius, style: .circular).fill(fnActiveGradient)
+                    } else {
+                        RoundedRectangle(cornerRadius: keyCornerRadius, style: .circular).fill(keySurface)
+                    }
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: keyCornerRadius, style: .circular)
+                        .stroke(fnActive ? .clear : keyBorder, lineWidth: 1)
+                }
+        }
+        .buttonStyle(PressAwareKeyStyle())
+        .accessibilityLabel("Fn")
+        .accessibilityValue(fnActive ? "已锁定" : "未锁定")
+        .accessibilityAddTraits(fnActive ? .isSelected : [])
+        .overlay(alignment: .top) { keyBubble("Fn", key: "fn") }
+    }
+
+    private func actionKeyButton(_ key: String, label: String) -> some View {
+        Button { tapWithModifiers(key) } label: {
+            Text(label).font(.system(size: 14, weight: .bold))
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(.white)
+                .background(actionGradient, in: RoundedRectangle(cornerRadius: controlCornerRadius, style: .circular))
+        }
+        .buttonStyle(PressAwareKeyStyle())
+        .overlay(alignment: .top) { keyBubble(label, key: key) }
+    }
+
+    private func keyButton(_ key: String, label: String, fontSize: CGFloat = 14) -> some View {
+        Button { tapWithModifiers(key) } label: {
+            keyFace(label, fontSize: fontSize)
+        }
+        .buttonStyle(PressAwareKeyStyle())
+        .overlay(alignment: .top) { keyBubble(label, key: key) }
+    }
+
+    private func heldKeyButton(_ key: String, label: String) -> some View {
+        Button {} label: {
+            keyFace(label, fontSize: 14)
+        }
+        .buttonStyle(PressAwareKeyStyle { isPressed in
+            if isPressed { beginHolding(key) } else { endHolding(key) }
+        })
+        .overlay(alignment: .top) { keyBubble(label, key: key) }
+    }
+
+    private func keyFace(_ label: String, fontSize: CGFloat) -> some View {
+        Text(label).font(.system(size: fontSize, weight: .bold))
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(keyText)
+            .background(keySurface, in: RoundedRectangle(cornerRadius: keyCornerRadius, style: .circular))
+            .overlay {
+                RoundedRectangle(cornerRadius: keyCornerRadius, style: .circular)
+                    .stroke(keyBorder, lineWidth: 1)
+            }
     }
 
     private func tapWithModifiers(_ key: String) {
@@ -359,21 +540,60 @@ private struct KeyboardCard: View {
         }
     }
 
+    private func toggleFn() {
+        if fnActive {
+            fnActive = false
+        } else {
+            withAnimation(.easeOut(duration: 0.13)) { fnActive = true }
+        }
+        Feedback.tap()
+        showBubble("fn")
+    }
+
+    private func beginHolding(_ key: String) {
+        guard !pressedKeys.contains(key) else { return }
+        guard model.socket.keyDown(key) else { Feedback.error(); return }
+        pressedKeys.insert(key)
+        Feedback.tap()
+        showBubble(key)
+    }
+
+    private func endHolding(_ key: String) {
+        guard pressedKeys.remove(key) != nil else { return }
+        if !model.socket.keyUp(key) { Feedback.error() }
+    }
+
     @ViewBuilder
     private func keyBubble(_ label: String, key: String) -> some View {
         if keyBubblesEnabled, activeBubble == key {
-            Text(label).font(.title3.bold()).padding(.horizontal, 12).padding(.vertical, 8)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-                .offset(y: -44).allowsHitTesting(false).transition(.scale.combined(with: .opacity)).zIndex(50)
+            let bubbleColor = Color(red: 0.8863, green: 0.9098, blue: 0.9412).opacity(0.96)
+            Text(label).font(.system(size: 28, weight: .heavy)).foregroundStyle(Color(red: 0.0078, green: 0.0235, blue: 0.0902))
+                .lineSpacing(-5)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .frame(minWidth: 52)
+                .background(bubbleColor, in: RoundedRectangle(cornerRadius: 18, style: .circular))
+                .overlay(alignment: .bottom) {
+                    RoundedRectangle(cornerRadius: 2, style: .circular)
+                        .fill(bubbleColor)
+                        .frame(width: 14, height: 14)
+                        .rotationEffect(.degrees(45))
+                        .offset(y: 7)
+                }
+                .shadow(color: .black.opacity(0.38), radius: 14, x: 0, y: 12)
+                .offset(y: -64)
+                .allowsHitTesting(false)
+                .transition(.scale.combined(with: .opacity))
+                .zIndex(50)
         }
     }
 
     private func showBubble(_ key: String) {
         guard keyBubblesEnabled else { return }
         bubbleTask?.cancel()
-        withAnimation(.spring(response: 0.18)) { activeBubble = key }
+        withAnimation(.easeOut(duration: 0.15)) { activeBubble = key }
         bubbleTask = Task {
-            try? await Task.sleep(for: .milliseconds(180))
+            try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.12)) { activeBubble = nil }
         }
@@ -457,12 +677,4 @@ extension View {
 
     func sectionTitle() -> some View { font(.headline) }
 
-    func keyboardKeyStyle() -> some View {
-        buttonStyle(.plain)
-            .font(.caption.weight(.semibold))
-            .frame(maxWidth: .infinity, minHeight: 38)
-            .background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 1) }
-            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-    }
 }

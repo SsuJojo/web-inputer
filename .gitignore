@@ -16,3 +16,5 @@ memory/
 .git_old/
 ios/*.xcodeproj/
 ios/DerivedData/
+/.artifacts/
+/scripts/debug.out

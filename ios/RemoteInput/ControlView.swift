@@ -44,7 +44,10 @@ struct ControlView: View {
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .sheet(isPresented: $showingPreview) { FullScreenPreview() }
-            .sheet(isPresented: $showingBrowser) { EmbeddedBrowserView() }
+            .sheet(isPresented: $showingBrowser) {
+                EmbeddedBrowserView()
+                    .interactiveDismissDisabled(true)
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
                     model.socket.ensureConnected()
@@ -95,34 +98,67 @@ private struct PreviewCard: View {
     @Binding var showingPreview: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 10) {
             HStack(spacing: 8) {
                 Button { Feedback.tap(); model.socket.sendCombo(modifiers: ["ctrl", "win"], key: "left") } label: {
                     Text("← 桌面")
                 }
-                .buttonStyle(.bordered).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                .buttonStyle(.bordered).lineLimit(1).fixedSize(horizontal: true, vertical: false).frame(minHeight: 52)
                 Spacer()
                 Button {
                     Feedback.tap()
-                    if !model.previewEnabled { model.setPreviewEnabled(true) }
-                    showingPreview = true
+                    model.setPreviewEnabled(!model.previewEnabled)
                 } label: {
                     VStack(spacing: 1) {
-                        Text("打开预览").font(.subheadline.weight(.bold))
+                        Text(model.previewEnabled ? "关闭预览" : "开启预览").font(.subheadline.weight(.bold))
                         Text(model.socket.currentWindowTitle.isEmpty ? "等待窗口" : "[ \(model.socket.currentWindowTitle) ]")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-                .buttonStyle(.plain).frame(maxWidth: .infinity)
+                .buttonStyle(.plain).frame(maxWidth: .infinity, minHeight: 52)
                 Spacer()
                 Button { Feedback.tap(); model.socket.sendCombo(modifiers: ["ctrl", "win"], key: "right") } label: {
                     Text("桌面 →")
                 }
-                .buttonStyle(.bordered).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                .buttonStyle(.bordered).lineLimit(1).fixedSize(horizontal: true, vertical: false).frame(minHeight: 52)
+            }
+
+            if model.previewEnabled {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.85)).aspectRatio(16 / 10, contentMode: .fit)
+                    if model.previewLoading, model.previewImage == nil {
+                        ProgressView("正在获取屏幕…").tint(.white).foregroundStyle(.white)
+                    } else if let image = model.previewImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        if model.previewError != nil {
+                            VStack {
+                                Spacer()
+                                Label("连接中断，显示上一帧", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption.weight(.semibold))
+                                    .padding(8)
+                                    .frame(maxWidth: .infinity)
+                                    .background(.black.opacity(0.7))
+                            }
+                        }
+                    } else {
+                        VStack(spacing: 8) {
+                            Image(systemName: "display.trianglebadge.exclamationmark").font(.title2)
+                            Text(model.previewError ?? "预览暂不可用").font(.caption).multilineTextAlignment(.center)
+                            Button("重试") { Feedback.tap(); model.retryPreview() }.buttonStyle(.bordered)
+                        }
+                        .foregroundStyle(.white)
+                        .padding()
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { if model.previewImage != nil { showingPreview = true } }
             }
 
         }
-        .remoteCard(compact: true)
+        .remoteCard()
     }
 }
 
@@ -142,9 +178,9 @@ private struct TextInputCard: View {
                 .overlay { RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.12), lineWidth: 1) }
             HStack(spacing: 8) {
                 Button("发送文本", systemImage: "paperplane.fill") { Feedback.tap(); model.sendText() }
-                    .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                    .buttonStyle(.borderedProminent).frame(maxWidth: .infinity, minHeight: 48)
                 Button("同步剪贴板", systemImage: "clipboard") { Feedback.tap(); model.syncClipboard() }
-                    .buttonStyle(.bordered).frame(maxWidth: .infinity)
+                    .buttonStyle(.bordered).frame(maxWidth: .infinity, minHeight: 48)
             }
         }
         .remoteCard(compact: true)
@@ -173,7 +209,7 @@ private struct WindowTouchpadCard: View {
                 }.buttonStyle(.plain).frame(maxWidth: .infinity)
                 Button("下一窗口", systemImage: "chevron.right") { Feedback.tap(); model.socket.sendWindow(action: "switch", direction: "right") }
                     .frame(maxWidth: .infinity)
-            }.buttonStyle(.plain).foregroundStyle(.blue)
+            }.buttonStyle(.plain).foregroundStyle(.blue).frame(minHeight: 54)
             if expanded {
             VStack(spacing: 10) {
                 HStack(spacing: 8) { trackpad; wheel }
@@ -231,6 +267,7 @@ private struct WindowTouchpadCard: View {
             .buttonStyle(.bordered).frame(maxWidth: .infinity)
     }
 }
+
 private struct PressAwareKeyStyle: ButtonStyle {
     var onPressChanged: ((Bool) -> Void)? = nil
 
@@ -671,8 +708,8 @@ private struct SettingsView: View {
 extension View {
     func remoteCard(compact: Bool = false) -> some View {
         padding(compact ? 10 : 14)
-            .background(Color(uiColor: .secondarySystemGroupedBackground).opacity(0.94), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.primary.opacity(0.12), lineWidth: 1) }
+            .background(Color(uiColor: .secondarySystemGroupedBackground).opacity(0.94), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.12), lineWidth: 1) }
     }
 
     func sectionTitle() -> some View { font(.headline) }

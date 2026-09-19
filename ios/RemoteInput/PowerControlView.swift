@@ -46,6 +46,7 @@ struct PowerControlView: View {
                 if model.powerLoading { ProgressView().controlSize(.small) }
                 Button("刷新", systemImage: "arrow.clockwise") { Feedback.tap(); Task { await model.refreshPowerStatus() } }.labelStyle(.iconOnly)
             }
+            .frame(minHeight: 50)
         }
         .tint(.primary)
         .onChange(of: expanded) { _, _ in Feedback.tap() }

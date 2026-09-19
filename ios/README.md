@@ -2,6 +2,8 @@
 
 The native SwiftUI client is generated with XcodeGen.
 
+Debug builds use `com.ssujo.RemoteInput.debug` and display as `Remote Input Debug`. Release builds and archives retain `com.ssujo.RemoteInput` and `Remote Input`.
+
 ```bash
 cd ios
 xcodegen generate

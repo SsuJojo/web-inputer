@@ -29,6 +29,13 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.ssujo.RemoteInput.debug
+          INFOPLIST_KEY_CFBundleDisplayName: Remote Input Debug
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.ssujo.RemoteInput
+          INFOPLIST_KEY_CFBundleDisplayName: Remote Input
     scheme:
       testTargets:
         - RemoteInputTests
